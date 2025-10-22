@@ -1,0 +1,19 @@
+(
+    entities: [
+        (
+            position: (500.0, 500.0),
+            velocity: (50.0, 50.0),
+            entity_type: "Prey",
+            color: (0.0, 1.0, 0.0, 1.0),
+            behavior_state: "Sleep"
+        ),
+        (
+            position: (600.0, 600.0),
+            velocity: null,
+            entity_type: "Food",
+            color: (1.0, 1.0, 0.0, 1.0),
+            hunger: null,
+            behavior_state: null
+        )
+    ],
+)
