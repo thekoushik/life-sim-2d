@@ -7,6 +7,9 @@ pub struct Position(pub Vec2);
 #[derive(Component, Serialize, Deserialize, Clone)]
 pub struct Velocity(pub Vec2);
 
+#[derive(Component, Serialize, Deserialize, Clone)]
+pub struct SenseRadius(pub f32);
+
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum EntityType {
     Prey,
