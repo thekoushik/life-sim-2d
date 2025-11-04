@@ -1,5 +1,6 @@
+// unused
 use bevy::prelude::*;
-use crate::entities::components::{Position, Hunger, BehaviorState, EntityType, SenseRadius};
+use crate::entities::components::{Position, Hunger, BehaviorState, Food, Prey, SenseRadius};
 use rand::Rng;
 
 pub trait Behavior {
@@ -9,8 +10,8 @@ pub trait Behavior {
         position: &Position,
         hunger: &Hunger,
         sense_radius: &SenseRadius,
-        food_query: &Query<(&Position, &EntityType), Without<BehaviorState>>,
-        all_entities: &Query<(Entity, &Position, &EntityType), (With<EntityType>, Without<BehaviorState>)>,
+        food_query: Query<&Position, With<Food>>,
+        prey_query: Query<&Position, With<Prey>>,
         time: &Res<Time>,
     ) -> (Vec2, BehaviorState);
 }
@@ -24,20 +25,18 @@ impl Behavior for SeekFood {
         position: &Position,
         hunger: &Hunger,
         sense_radius: &SenseRadius,
-        food_query: &Query<(&Position, &EntityType), Without<BehaviorState>>,
-        all_entities: &Query<(Entity, &Position, &EntityType), (With<EntityType>, Without<BehaviorState>)>,
+        food_query: Query<&Position, With<Food>>,
+        prey_query: Query<&Position, With<Prey>>,
         time: &Res<Time>,
     ) -> (Vec2, BehaviorState) {
         // Find nearest food
         let mut nearest_food_pos = None;
         let mut min_distance = sense_radius.0;
-        for (food_pos, entity_type) in food_query.iter() {
-            if matches!(entity_type, EntityType::Food) {
-                let distance = position.0.distance(food_pos.0);
-                if distance < min_distance {
-                    min_distance = distance;
-                    nearest_food_pos = Some(food_pos.0);
-                }
+        for food_pos in food_query.iter() {
+            let distance = position.0.distance(food_pos.0);
+            if distance < min_distance {
+                min_distance = distance;
+                nearest_food_pos = Some(food_pos.0);
             }
         }
 
@@ -52,7 +51,7 @@ impl Behavior for SeekFood {
 
         // Apply collision avoidance (repulsive force from nearby entities)
         let mut avoidance_force = Vec2::ZERO;
-        for (other_entity, other_pos, other_type) in all_entities.iter() {
+        for (other_pos) in prey_query.iter() {
             if other_entity == entity {
                 continue; // Skip self
             }
@@ -79,7 +78,7 @@ impl Behavior for SeekFood {
             if rand::random::<f32>() < 0.5 {
                 BehaviorState::Sleep
             } else {
-                BehaviorState::InfluencedWork
+                BehaviorState::Wander
             }
         } else {
             BehaviorState::SeekFood
@@ -111,9 +110,9 @@ impl Behavior for Sleep {
     }
 }
 
-pub struct InfluencedWork;
+pub struct Wander;
 
-impl Behavior for InfluencedWork {
+impl Behavior for Wander {
     fn execute(
         &self,
         entity: Entity,
@@ -158,7 +157,7 @@ impl Behavior for InfluencedWork {
         let next_state = if hunger.0 > 50.0 {
             BehaviorState::SeekFood
         } else {
-            BehaviorState::InfluencedWork
+            BehaviorState::Wander
         };
         (desired_velocity, next_state)
     }

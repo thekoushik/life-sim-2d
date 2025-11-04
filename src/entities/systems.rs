@@ -1,16 +1,16 @@
 use bevy::prelude::*;
 use rand::Rng;
 
-use super::components::{Position, Velocity, EntityType, EntityColor, Hunger, BehaviorState, SenseRadius};
-use super::behaviors::{Behavior, SeekFood, Sleep, InfluencedWork};
+use super::components::{Position, Velocity, Food, Prey, EntityColor, Hunger, BehaviorState, SenseRadius, Brain, Needs, Genes };
+// use super::behaviors::{Behavior, SeekFood, Sleep, Wander};
 
 const GREEN: Color = Color::srgb(0.0, 1.0, 0.0);
 const YELLOW: Color = Color::srgb(1.0, 1.0, 0.0);
 
-fn create_food(pos: Vec2) -> (Position, EntityType, EntityColor, SpriteBundle) {
+fn create_food(pos: Vec2) -> (Position, Food, EntityColor, SpriteBundle) {
     (
         Position(pos),
-        EntityType::Food,
+        Food,
         EntityColor(GREEN),
         SpriteBundle {
             sprite: Sprite {
@@ -23,11 +23,11 @@ fn create_food(pos: Vec2) -> (Position, EntityType, EntityColor, SpriteBundle) {
         },
     )
 }
-fn create_prey(pos: Vec2, velo: Vec2, hunger: f32, sense_radus:f32) -> (Position, Velocity,EntityType, EntityColor,Hunger,BehaviorState, SenseRadius,  SpriteBundle) {
+fn create_prey(pos: Vec2, velo: Vec2, hunger: f32, sense_radus:f32) -> (Position, Velocity,Prey, EntityColor,Hunger,BehaviorState, SenseRadius,  SpriteBundle) {
     (
         Position(pos),
         Velocity(velo),
-        EntityType::Prey,
+        Prey,
         EntityColor(YELLOW),
         Hunger(hunger),
         BehaviorState::Sleep,
@@ -67,62 +67,37 @@ pub fn setup_entities(mut commands: Commands) {
     info!("Spawned 1000 Prey and 200 Food entities");
 }
 
-pub fn update_behaviors(
-    mut query: Query<(Entity, &mut Position, &Hunger, &SenseRadius, &mut Velocity, &mut BehaviorState, &mut Transform)>,
-    food_query: Query<(&Position, &EntityType), Without<BehaviorState>>,
-    all_entities: Query<(Entity, &Position, &EntityType), (With<EntityType>, Without<BehaviorState>)>,
-    time: Res<Time>,
+pub fn game_loop(
+    mut commands: Commands,
+    mut prey_query: Query<(
+        Entity,&mut Position, &mut Hunger, &mut BehaviorState, &SenseRadius, &mut Transform
+    ), With<Prey>>,
+    food_query: Query<(Entity,&Position), (With<Food>, Without<BehaviorState>)>,
+    time: Res<Time>
 ) {
-    for (entity, mut position, hunger, sense_radius, mut velocity, mut behavior_state, mut transform) in query.iter_mut() {
-        let behavior: Box<dyn Behavior> = match *behavior_state {
-            BehaviorState::SeekFood => Box::new(SeekFood),
-            BehaviorState::Sleep => Box::new(Sleep),
-            BehaviorState::InfluencedWork => Box::new(InfluencedWork),
-        };
-        let (new_velocity, new_state) = behavior.execute(entity, &position, hunger, &sense_radius, &food_query, &all_entities, &time);
-        velocity.0 = new_velocity;
-        *behavior_state = new_state;
-
-        // Update position
-        position.0 += velocity.0;
-        position.0.x = position.0.x.rem_euclid(1000.0);
-        position.0.y = position.0.y.rem_euclid(1000.0);
-        transform.translation = position.0.extend(0.0);
-    }
-}
-
-pub fn update_hunger(
-    mut query: Query<(&mut Hunger), With<EntityType>>, time: Res<Time>
-) {
-    for mut hunger in query.iter_mut() {
+    for (
+        prey_entity,
+        mut prey_pos,
+        mut hunger,
+        mut behavior_state,
+        sense_radius,
+        mut transform
+    ) in prey_query.iter_mut() {
         hunger.0 += 3.0 * time.delta_seconds();
         hunger.0 = hunger.0.clamp(0.0, 100.0);
-        // if hunger.0 > 30.0 {
-        // info!("Prey {:?} hungry {:?}",prey, hunger.0);
-        // }
-    }
-}
-
-pub fn eat_food(
-    mut commands: Commands,
-    mut prey_query: Query<(Entity, &Position, &mut Hunger, &mut BehaviorState, &EntityType), With<EntityType>>,
-    food_query: Query<(Entity, &Position, &EntityType), (With<EntityType>, Without<BehaviorState>)>,
-) {
-    for (prey_entity, prey_pos, mut hunger, mut behavior_state, prey_type) in prey_query.iter_mut() {
-        if *behavior_state != BehaviorState::SeekFood || !matches!(prey_type, EntityType::Prey) {
-            continue;
-        }
 
         // Find the closest Food entity within 1 unit
         let mut closest_food = None;
-        let mut min_distance = f32::MAX;
-        for (food_entity, food_pos, food_type) in food_query.iter() {
-            if matches!(food_type, EntityType::Food) {
-                let distance = prey_pos.0.distance(food_pos.0);
-                if distance <= 2.0 && distance < min_distance {
-                    min_distance = distance;
-                    closest_food = Some(food_entity);
-                }
+        let mut nearest_food_pos = None;
+        let mut min_distance = sense_radius.0;
+        for (food_entity, food_pos) in food_query.iter() {
+            let distance = prey_pos.0.distance(food_pos.0);
+            if distance <= 2.0 {
+                closest_food = Some(food_entity);
+                break;
+            } else if distance < min_distance {
+                min_distance = distance;
+                nearest_food_pos = Some(food_pos.0);
             }
         }
 
@@ -130,30 +105,102 @@ pub fn eat_food(
         if let Some(food_entity) = closest_food {
             commands.entity(food_entity).despawn();
             hunger.0 = (hunger.0 - 50.0).max(0.0);
-            if hunger.0 < 20.0 {
-                *behavior_state = BehaviorState::Sleep;
-            } else {
-                *behavior_state = BehaviorState::SeekFood; // Re-seek new Food
-            }
             // info!(
             //     "Prey {:?} (type: {:?}) ate Food {:?} (type: Food), hunger now {}, distance: {}",
             //     prey_entity, prey_type, food_entity, hunger.0, min_distance
             // );
+        } else if hunger.0 >= 100.0 {
+            commands.entity(prey_entity).despawn();
+            commands.spawn(create_food(prey_pos.0));
+        } else if let Some(food_pos) = nearest_food_pos {
+            // Move toward nearest food
+            let direction = (food_pos - prey_pos.0).normalize_or_zero();
+            // more hungry = more speed
+            let move_distance = (10.0 * hunger.0 / 100.0) * time.delta_seconds(); // Move at 10 units/s
+            // *behavior_state = BehaviorState::SeekFood;
+            prey_pos.0 += direction * move_distance;
+            // Update position
+            prey_pos.0.x = prey_pos.0.x.rem_euclid(1000.0);
+            prey_pos.0.y = prey_pos.0.y.rem_euclid(1000.0);
+            transform.translation = prey_pos.0.extend(0.0);
+        }
+        if hunger.0 < 20.0 {
+            *behavior_state = BehaviorState::Sleep;
+        } else {
+            *behavior_state = BehaviorState::SeekFood; // Re-seek new Food
         }
     }
 }
 
-pub fn starve(
-    mut commands: Commands,
-    prey_query: Query<(Entity, &Position, &Hunger, &BehaviorState, &EntityType), With<EntityType>>,
-    food_query: Query<&EntityType, With<EntityType>>,
-) {
-    let food_available = food_query.iter().any(|et| matches!(et, EntityType::Food));
-    for (prey_entity, position, hunger, behavior_state, entity_type) in prey_query.iter() {
-        if hunger.0 >= 100.0 && !food_available && *behavior_state == BehaviorState::SeekFood && matches!(entity_type, EntityType::Prey) {
-            commands.entity(prey_entity).despawn();
-            commands.spawn(create_food(position.0));
-            // info!("Prey {:?} (type: {:?}) starved and died", prey_entity, entity_type);
-        }
-    }
-}
+// fn wandering_system(
+//     mut query: Query<(&Genes, &mut Brain, &Transform)>,
+//     time: Res<Time>,
+// ) {
+//     for (genes, mut brain, transform) in &mut query {
+//         brain.time_since_last_target += time.delta_seconds();
+
+//         // Change wander target periodically based on curiosity
+//         let change_interval = 3.0.lerp(12.0, 1.0 - genes.curiosity);
+//         if brain.time_since_last_target > change_interval {
+//             brain.time_since_last_target = 0.0;
+//             let angle = rand::random::<f32>() * std::f32::consts::TAU;
+//             let distance = rand::random::<f32>() * genes.wander_radius;
+//             brain.target = Some(transform.translation.truncate() + Vec2::from_angle(angle) * distance);
+//         }
+//     }
+// }
+
+// fn perception_system(
+//     mut query: Query<(&Transform, &Genes, &mut Perception)>,
+//     foods: Query<&Transform, With<Food>>,
+//     predators: Query<&Transform, With<Predator>>,
+// ) {
+//     for (transform, genes, mut perception) in &mut query {
+//         perception.visible_food.clear();
+//         perception.visible_predators.clear();
+
+//         let pos = transform.translation.truncate();
+
+//         for food in foods.iter() {
+//             let dist = pos.distance(food.translation.truncate());
+//             if dist < genes.vision_range {
+//                 perception.visible_food.push(food.translation.truncate());
+//             }
+//         }
+
+//         // similar for predators
+//     }
+// }
+
+// fn decision_system(
+//     mut query: Query<(&Genes, &Needs, &Perception, &mut Brain)>
+// ) {
+//     for (genes, needs, perception, mut brain) in &mut query {
+//         if needs.fear > genes.panic_threshold && !perception.visible_predators.is_empty() {
+//             brain.state = State::Flee;
+//         } else if needs.hunger > 0.7 && !perception.visible_food.is_empty() {
+//             brain.state = State::SeekFood;
+//         } else if needs.energy < 0.3 && rand::random::<f32>() < genes.laziness {
+//             brain.state = State::Sleep;
+//         } else {
+//             brain.state = State::Wander;
+//         }
+//     }
+// }
+
+// fn mutate_genes(parent: &Genes) -> Genes {
+//     let mut rng = rand::thread_rng();
+//     let mutate = |v: f32| (v + rng.gen_range(-0.05..0.05)).clamp(0.0, 1.0);
+//     Genes {
+//         curiosity: mutate(parent.curiosity),
+//         boldness: mutate(parent.boldness),
+//         greed: mutate(parent.greed),
+//         laziness: mutate(parent.laziness),
+//         panic_threshold: mutate(parent.panic_threshold),
+//         aggression: mutate(parent.aggression),
+//         vision_range: (parent.vision_range + rng.gen_range(-2.0..2.0)).max(1.0),
+//         smell_range: (parent.smell_range + rng.gen_range(-2.0..2.0)).max(1.0),
+//         wander_radius: (parent.wander_radius + rng.gen_range(-5.0..5.0)).max(1.0),
+//         max_speed: (parent.max_speed + rng.gen_range(-0.2..0.2)).max(0.1),
+//     }
+// }
