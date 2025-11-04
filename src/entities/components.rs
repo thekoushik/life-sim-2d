@@ -1,21 +1,29 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use bevy::utils::HashMap;
+use bevy::math::IVec2;
+
+#[derive(Resource, Default)]
+pub struct SpatialGrid {
+    pub buckets: HashMap<IVec2, Vec<Entity>>,
+    pub cell_size: f32,
+}
 
 #[derive(Component, Clone)]
 pub struct Genes {
     // personality traits (0.0 - 1.0 range)
     pub curiosity: f32,        // how often it changes wander target
-    pub boldness: f32,         // how close it dares approach predators
-    pub greed: f32,            // how far it goes for food
+    // pub boldness: f32,         // how close it dares approach predators
+    pub greed: f32,            // how far it goes for food or wants to eat
     pub laziness: f32,         // prefers resting vs exploring
-    pub panic_threshold: f32,  // how easily it flees
-    pub aggression: f32,       // relevant for predator
+    // pub panic_threshold: f32,  // how easily it flees
+    // pub aggression: f32,       // relevant for predator
 
     // sense and physical limits
     pub vision_range: f32,
-    pub smell_range: f32,
+    // pub smell_range: f32,
     pub wander_radius: f32,
-    pub max_speed: f32,
+    // pub max_speed: f32,
 }
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy)]
@@ -39,6 +47,15 @@ pub struct Prey;
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Food;
 
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct Predator;
+
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct Living;
+
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct Corpse;
+
 #[derive(Component, Serialize, Deserialize, Clone)]
 pub struct EntityColor(pub Color);
 
@@ -53,18 +70,23 @@ pub enum BehaviorState {
     Wander,
 }
 
-#[derive(Component, Default)]
-struct Perception {
-    visible_food: Vec<Entity>,
-    visible_predators: Vec<Entity>,
-}
-
-#[derive(Component)]
-pub struct Brain {
-    pub state: BehaviorState,
+#[derive(Component, Default, Clone)]
+pub struct Perception {
+    pub target_food: Option<Entity>,
+    pub visible_predators: Vec<Entity>,
+    // pub nearby_predator: bool,
+    pub time_since_last_sense: f32,
+    pub neighbors: Vec<Vec2>,
     pub target: Option<Vec2>,
     pub time_since_last_target: f32,
 }
+
+// #[derive(Component)]
+// pub struct Brain {
+//     // pub state: BehaviorState,
+//     pub target: Option<Vec2>,
+//     pub time_since_last_target: f32,
+// }
 
 #[derive(Component)]
 pub struct Needs {

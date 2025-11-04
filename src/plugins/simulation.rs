@@ -1,8 +1,8 @@
 use bevy::prelude::*;
-use crate::entities::systems::{setup_entities, game_loop};
+use crate::entities::systems::{setup_entities, update_grid_system, game_loop, perception_scan_system};
 use crate::world::config::{save_config};
 use crate::entities::components::{
-    BehaviorState, EntityColor, Food, Prey, Hunger, Position, Velocity
+    BehaviorState, EntityColor, Food, Prey, Hunger, Position, Velocity, SpatialGrid
 };
 
 pub struct SimulationPlugin;
@@ -10,8 +10,14 @@ pub struct SimulationPlugin;
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_entities)
+        .insert_resource(SpatialGrid { cell_size: 64.0, ..Default::default() })
         // app.add_systems(Startup, load_config)
-            .add_systems(Update, (game_loop, save_on_keypress));
+        .add_systems(Update, (
+            update_grid_system,
+            perception_scan_system,
+            game_loop,
+            save_on_keypress
+        ));
     }
 }
 
