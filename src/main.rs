@@ -5,6 +5,7 @@ mod world;
 mod helpers;
 use plugins::simulation::SimulationPlugin;
 use plugins::fps::FpsPlugin;
+use helpers::util::{WORLD_WIDTH, WORLD_HEIGHT};
 
 fn main() {
     App::new()
@@ -12,7 +13,7 @@ fn main() {
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "2D Life Simulation".into(),
-                    resolution: (800.0, 600.0).into(),
+                    resolution: (WORLD_WIDTH, WORLD_HEIGHT).into(),
                     ..default()
                 }),
                 ..default()
@@ -35,7 +36,7 @@ fn main() {
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2dBundle {
-        transform: Transform::from_translation(Vec3::new(500.0, 500.0, 0.0)), // Center on world
+        transform: Transform::from_translation(Vec3::new(WORLD_WIDTH / 2.0, WORLD_HEIGHT / 2.0, 0.0)), // Center on world
         ..default()
     });
 }

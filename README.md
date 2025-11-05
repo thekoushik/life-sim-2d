@@ -14,6 +14,7 @@ This is a 2D life simulation built with Bevy.
 - Perception system for detecting nearby entities
 - Behavior system for controlling entity behavior
 - Genetic system
+- Camera movement with WASD keys
 
 ## Requirements
 - Bevy 0.14.0

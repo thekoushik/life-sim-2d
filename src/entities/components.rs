@@ -2,12 +2,16 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use bevy::utils::HashMap;
 use bevy::math::IVec2;
+use crate::helpers::util::{GREEN, YELLOW, GRAY};
 
 #[derive(Resource, Default)]
 pub struct SpatialGrid {
     pub buckets: HashMap<IVec2, Vec<Entity>>,
     pub cell_size: f32,
 }
+
+#[derive(Resource)]
+pub struct SimulationSpeed(pub f32);
 
 #[derive(Component, Clone)]
 pub struct Genes {
@@ -23,15 +27,13 @@ pub struct Genes {
     pub vision_range: f32,
     // pub smell_range: f32,
     pub wander_radius: f32,
-    // pub max_speed: f32,
+    pub max_speed: f32,
     pub bite_size: f32, // how much food it can eat at once
+    pub hunger_rate: f32, // how much hunger it gains per second
 }
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy)]
 pub struct Position(pub Vec2);
-
-#[derive(Component, Serialize, Deserialize, Clone)]
-pub struct Velocity(pub Vec2);
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Prey;
@@ -47,7 +49,10 @@ pub struct FoodAmount(pub f32); // How much food is left in the food entity
 pub struct Predator;
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
-pub struct Living;
+pub struct LivingEntity;
+
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct WorldObject;
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Corpse;
@@ -91,3 +96,61 @@ pub struct Needs {
     pub fear: f32,
 }
 
+
+pub fn create_food(pos: Vec2, amount: f32) -> (Position, Food, WorldObject, EntityColor, SpriteBundle, FoodAmount) {
+    (
+        Position(pos),
+        Food,
+        WorldObject,
+        EntityColor(GREEN),
+        SpriteBundle {
+            sprite: Sprite {
+                color: GREEN,
+                custom_size: Some(Vec2::new(2.0, 2.0)), // Smaller radius ~3
+                ..default()
+            },
+            transform: Transform::from_translation(pos.extend(0.0)),
+            ..default()
+        },
+        FoodAmount(amount),
+    )
+}
+pub fn create_prey(pos: Vec2, hunger: f32, gene: Genes) -> (Position, Prey,WorldObject, LivingEntity, EntityColor,Hunger,BehaviorState, Genes,  SpriteBundle, Perception) {
+    (
+        Position(pos),
+        Prey,
+        WorldObject,
+        LivingEntity,
+        EntityColor(YELLOW),
+        Hunger(hunger),
+        BehaviorState::Wander,
+        gene,
+        // SenseRadius(sense_radus),
+        SpriteBundle {
+            sprite: Sprite {
+                color: YELLOW,
+                custom_size: Some(Vec2::new(2.0, 2.0)),
+                ..default()
+            },
+            transform: Transform::from_translation(pos.extend(0.0)),
+            ..default()
+        },
+        Perception::default(),
+    )
+}
+pub fn create_corpse(pos: Vec2) -> (Position, Corpse, WorldObject, SpriteBundle) {
+    (
+        Position(pos),
+        Corpse,
+        WorldObject,
+        SpriteBundle {
+            sprite: Sprite {
+                color: GRAY,
+                custom_size: Some(Vec2::new(2.0, 2.0)),
+                ..default()
+            },
+            transform: Transform::from_translation(pos.extend(0.0)),
+            ..default()
+        },
+    )
+}

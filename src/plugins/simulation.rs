@@ -1,32 +1,70 @@
 use bevy::prelude::*;
-use crate::entities::systems::{setup_entities, update_grid_system, game_loop, perception_scan_system};
+use crate::entities::systems::{
+    setup_entities, update_grid_system
+};
+use crate::entities::perception::perception_scan_system;
+use crate::entities::gameloop::game_loop;
 use crate::world::config::{save_config};
 use crate::entities::components::{
-    BehaviorState, EntityColor, Food, Prey, Hunger, Position, Velocity, SpatialGrid
+    BehaviorState, EntityColor, Food, Prey, Hunger, Position, SpatialGrid, SimulationSpeed
 };
+const CAMERA_SPEED: f32 = 100.;
 
 pub struct SimulationPlugin;
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
+        // app.add_systems(Startup, load_config)
         app.add_systems(Startup, setup_entities)
         .insert_resource(SpatialGrid { cell_size: 64.0, ..Default::default() })
-        // app.add_systems(Startup, load_config)
-        .add_systems(Update, (
-            update_grid_system,
-            perception_scan_system,
-            game_loop,
-            save_on_keypress
-        ));
+        .insert_resource(SimulationSpeed(1.0))
+        // entity systems
+        .add_systems(Update,
+            (
+                update_grid_system,
+                perception_scan_system,
+                game_loop
+            ).chain()
+        )
+        // input systems
+        .add_systems(Update, 
+            (
+                save_on_keypress,
+                move_camera
+            ).chain()
+        );
     }
 }
 
 fn save_on_keypress(
     input: Res<ButtonInput<KeyCode>>,
-    query: Query<(&Position, Option<&Velocity>, Option<&Food>, Option<&Prey>, &EntityColor, Option<&Hunger>, Option<&BehaviorState>)>,
+    query: Query<(&Position,Option<&Food>, Option<&Prey>, &EntityColor, Option<&Hunger>, Option<&BehaviorState>)>,
 ) {
-    if input.just_pressed(KeyCode::KeyS) {
+    if input.just_pressed(KeyCode::KeyX) {
         save_config(query);
         info!("Saved simulation state to assets/save.ron");
     }
+}
+
+fn move_camera(
+    mut camera: Query<&mut Transform, With<Camera2d>>,
+    input: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+) {
+    let mut camera_transform = camera.single_mut();
+    let mut direction = Vec2::ZERO;
+    if input.pressed(KeyCode::KeyW) {
+        direction.y += 1.;
+    }
+    if input.pressed(KeyCode::KeyS) {
+        direction.y -= 1.;
+    }
+    if input.pressed(KeyCode::KeyA) {
+        direction.x -= 1.;
+    }
+    if input.pressed(KeyCode::KeyD) {
+        direction.x += 1.;
+    }
+    let move_delta = direction.normalize_or_zero() * CAMERA_SPEED * time.delta_seconds();
+    camera_transform.translation += move_delta.extend(0.);
 }

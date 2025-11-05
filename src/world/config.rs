@@ -3,7 +3,7 @@ use ron::from_str;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-use crate::entities::components::{Position, Velocity, Prey, Food, EntityColor, Hunger, BehaviorState};
+use crate::entities::components::{Position, Prey, Food, EntityColor, Hunger, BehaviorState};
 
 #[derive(Serialize, Deserialize)]
 struct SimConfig {
@@ -13,7 +13,6 @@ struct SimConfig {
 #[derive(Serialize, Deserialize)]
 struct EntityConfig {
     position: (f32, f32),
-    velocity: Option<(f32, f32)>, // Optional for Food (no velocity)
     entity_type: String,
     color: (f32, f32, f32, f32),
     hunger: Option<f32>, // Optional for Prey only
@@ -44,9 +43,6 @@ pub fn load_config(mut commands: Commands) {
                                 ..default()
                             },
                         ));
-                        if let Some((vx, vy)) = entity.velocity {
-                            entity_commands.insert(Velocity(Vec2::new(vx, vy)));
-                        }
                         if let Some(hunger) = entity.hunger {
                             entity_commands.insert(Hunger(hunger));
                         }
@@ -82,10 +78,10 @@ pub fn load_config(mut commands: Commands) {
     }
 }
 
-pub fn save_config(query: Query<(&Position, Option<&Velocity>, Option<&Food>, Option<&Prey>, &EntityColor, Option<&Hunger>, Option<&BehaviorState>)>) {
+pub fn save_config(query: Query<(&Position, Option<&Food>, Option<&Prey>, &EntityColor, Option<&Hunger>, Option<&BehaviorState>)>) {
     let entities: Vec<EntityConfig> = query
         .iter()
-        .map(|(pos, vel, _food, prey, color, hunger, behavior_state)| {
+        .map(|(pos, _food, prey, color, hunger, behavior_state)| {
             let (r, g, b, a) = match color.0 {
                 Color::Srgba(Srgba { red, green, blue, alpha, .. }) => {
                     (red, green, blue, alpha)
@@ -99,8 +95,6 @@ pub fn save_config(query: Query<(&Position, Option<&Velocity>, Option<&Food>, Op
             };
             EntityConfig {
                 position: (pos.0.x, pos.0.y),
-                // velocity: (vel.0.x, vel.0.y),
-                velocity: vel.map(|v| (v.0.x, v.0.y)),
                 entity_type,
                 color: (r, g, b, a),
                 hunger: hunger.map(|h| h.0),
