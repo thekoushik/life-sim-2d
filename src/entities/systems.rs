@@ -1,10 +1,11 @@
 use bevy::prelude::*;
 use rand::Rng;
+use crate::helpers::util::{GREEN, YELLOW};
+use super::components::{
+    Position, Velocity, Food, Prey, EntityColor, Hunger, BehaviorState,
+    Genes, SpatialGrid, Living, Perception,Predator, FoodAmount
+};
 
-use super::components::{Position, Velocity, Food, Prey, EntityColor, Hunger, BehaviorState, SenseRadius, Needs, Genes, SpatialGrid, Living, Perception,Predator };
-
-const GREEN: Color = Color::srgb(0.0, 1.0, 0.0);
-const YELLOW: Color = Color::srgb(1.0, 1.0, 0.0);
 const NEIGHBOR_CELLS:[IVec2;9] = [
     IVec2::new(-1, -1), IVec2::new(-1, 0), IVec2::new(-1, 1),
     IVec2::new(0, -1),  IVec2::new(0, 0),  IVec2::new(0, 1),
@@ -13,7 +14,7 @@ const NEIGHBOR_CELLS:[IVec2;9] = [
 const NEARBY_AVOIDANCE_DISTANCE: f32 = 5.0;
 const COLLISION_RADIUS: f32 = 4.0;
 
-fn create_food(pos: Vec2) -> (Position, Food, Living, EntityColor, SpriteBundle) {
+fn create_food(pos: Vec2, amount: f32) -> (Position, Food, Living, EntityColor, SpriteBundle, FoodAmount) {
     (
         Position(pos),
         Food,
@@ -28,6 +29,7 @@ fn create_food(pos: Vec2) -> (Position, Food, Living, EntityColor, SpriteBundle)
             transform: Transform::from_translation(pos.extend(0.0)),
             ..default()
         },
+        FoodAmount(amount),
     )
 }
 fn create_prey(pos: Vec2, velo: Vec2, hunger: f32, gene: Genes) -> (Position, Velocity,Prey,Living, EntityColor,Hunger,BehaviorState, Genes,  SpriteBundle, Perception) {
@@ -76,6 +78,7 @@ pub fn setup_entities(mut commands: Commands) {
                 greed: rng.gen_range(0.0..1.0),
                 curiosity: rng.gen_range(0.0..1.0),
                 wander_radius: rng.gen_range(200.0..500.0),
+                bite_size: rng.gen_range(1.0..10.0),
                 // aggression: 0.0,
                 // boldness: 0.0,
                 // max_speed: 10.0,
@@ -85,10 +88,13 @@ pub fn setup_entities(mut commands: Commands) {
         ));
     }
     for _ in 0..200 {
-        commands.spawn(create_food(Vec2::new(
-            rng.gen_range(0.0..1000.0),
-            rng.gen_range(0.0..1000.0),
-        )));
+        commands.spawn(create_food(
+            Vec2::new(
+                rng.gen_range(0.0..1000.0),
+                rng.gen_range(0.0..1000.0),
+            ),
+            rng.gen_range(10.0..100.0)
+        ));
     }
     info!("Spawned 1000 Prey and 200 Food entities");
 }
@@ -216,7 +222,7 @@ pub fn game_loop(
         &mut Transform,
         &Perception
     ), With<Prey>>,
-    food_query: Query<(Entity,&Position), (With<Food>, Without<BehaviorState>)>,
+    mut food_query: Query<(Entity,&Position, &mut FoodAmount), (With<Food>, Without<BehaviorState>)>,
     time: Res<Time>
 ) {
     for (
@@ -233,12 +239,15 @@ pub fn game_loop(
 
         let mut nearest_food_pos = None;
         if let Some(food) = perception.target_food {
-            if let Ok((food_entity, food_pos)) = food_query.get(food) {
+            if let Ok((food_entity, food_pos, mut food_amount)) = food_query.get_mut(food) {
                 let distance = prey_pos.0.distance(food_pos.0);
                 if distance <= 2.0 {
-                    // closest_food = Some(food_entity);
-                    commands.entity(food_entity).despawn();
-                    hunger.0 = (hunger.0 - 50.0).max(0.0);
+                    let amount_eaten = genes.bite_size.min(food_amount.0);
+                    food_amount.0 -= amount_eaten;
+                    hunger.0 = (hunger.0 - amount_eaten).clamp(0.0, 100.0);
+                    if food_amount.0 <= 0.0 {
+                        commands.entity(food_entity).despawn();
+                    }
                 } else {
                     nearest_food_pos = Some(food_pos.0);
                 }
@@ -247,7 +256,8 @@ pub fn game_loop(
         let mut desired_velocity = Vec2::ZERO;
         if hunger.0 >= 100.0 {
             commands.entity(prey_entity).despawn();
-            commands.spawn(create_food(prey_pos.0));
+            // TODO: implement corpse creation here and body flesh amount to be used for food amount
+            // commands.spawn(create_food(prey_pos.0, ));
         } else if let Some(food_pos) = nearest_food_pos {
             // Move toward nearest food
             let direction = (food_pos - prey_pos.0).normalize_or_zero();

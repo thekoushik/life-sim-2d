@@ -2,7 +2,9 @@ use bevy::prelude::*;
 mod plugins;
 mod entities;
 mod world;
+mod helpers;
 use plugins::simulation::SimulationPlugin;
+use plugins::fps::FpsPlugin;
 
 fn main() {
     App::new()
@@ -25,6 +27,7 @@ fn main() {
                 ..default()
             })
         )
+        .add_plugins(FpsPlugin)
         .add_plugins(SimulationPlugin) // Custom simulation logic
         .add_systems(Startup, setup_camera)
         .run();

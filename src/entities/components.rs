@@ -24,6 +24,7 @@ pub struct Genes {
     // pub smell_range: f32,
     pub wander_radius: f32,
     // pub max_speed: f32,
+    pub bite_size: f32, // how much food it can eat at once
 }
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy)]
@@ -32,20 +33,15 @@ pub struct Position(pub Vec2);
 #[derive(Component, Serialize, Deserialize, Clone)]
 pub struct Velocity(pub Vec2);
 
-#[derive(Component, Serialize, Deserialize, Clone)]
-pub struct SenseRadius(pub f32);
-
-// #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
-// pub enum EntityType {
-//     Prey,
-//     Food, // New variant for food entities
-// }
-
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Prey;
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Food;
+
+
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct FoodAmount(pub f32); // How much food is left in the food entity
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Predator;
@@ -59,7 +55,7 @@ pub struct Corpse;
 #[derive(Component, Serialize, Deserialize, Clone)]
 pub struct EntityColor(pub Color);
 
-#[derive(Component, Serialize, Deserialize, Clone)]
+#[derive(Component, Serialize, Deserialize, Clone, Copy)]
 pub struct Hunger(pub f32); // Hunger for Prey (0.0 = full, 100.0 = starving)
 
 #[derive(Component, Serialize, Deserialize, Clone, PartialEq)]
