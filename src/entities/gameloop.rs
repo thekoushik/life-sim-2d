@@ -70,32 +70,35 @@ pub fn game_loop(
             desired_velocity = direction * move_distance;
         }
 
+        // always avoid neighbors, cascade movement
         let mut avoidance_force = Vec2::ZERO;
-        if desired_velocity.length() > 0.0 {
-            // avoid neighbors
-            for &neighbor_pos in perception.neighbors.iter() {
-                // its the food I am going to eat, so I should not avoid it
-                if let Some(food_pos) = nearest_food_pos {
-                    if neighbor_pos == food_pos {
-                        continue;
-                    }
+        for &neighbor_pos in perception.neighbors.iter() {
+            // its the food I am going to eat, so I should not avoid it
+            if let Some(food_pos) = nearest_food_pos {
+                if neighbor_pos == food_pos {
+                    continue;
                 }
-                let distance = prey_pos.0.distance(neighbor_pos);
-                let repulsion_direction = (prey_pos.0 - neighbor_pos).normalize_or_zero();
-                let strength = (COLLISION_RADIUS - distance) / COLLISION_RADIUS; // Stronger when closer
-                avoidance_force += repulsion_direction * strength * REPULSION_STRENGTH * delta_time;
-
-
-                // Add tangential force for going around
-                let tangent = Vec2::new(-repulsion_direction.y, repulsion_direction.x);
-                
-                // Choose tangent direction based on desired movement
-                let desired_movement_direction = desired_velocity.normalize_or_zero();
-                let dot_product = tangent.dot(desired_movement_direction);
-                let tangent_direction = if dot_product >= 0.0 { tangent } else { -tangent };
-                
-                avoidance_force += tangent_direction * delta_time;
             }
+            let distance = prey_pos.0.distance(neighbor_pos);
+            let repulsion_direction = (prey_pos.0 - neighbor_pos).normalize_or_zero();
+            let strength = (COLLISION_RADIUS - distance) / COLLISION_RADIUS; // Stronger when closer
+            avoidance_force += repulsion_direction * strength * REPULSION_STRENGTH * delta_time;
+
+
+            // Add tangential force for going around
+            // randomly choose the tangent direction
+            let tangent = if rand::random::<f32>() > 0.5 {
+                Vec2::new(-repulsion_direction.y, repulsion_direction.x)
+            } else {
+                Vec2::new(repulsion_direction.y, -repulsion_direction.x)
+            };
+            
+            // Choose tangent direction based on desired movement
+            let desired_movement_direction = desired_velocity.normalize_or_zero();
+            let dot_product = tangent.dot(desired_movement_direction);
+            let tangent_direction = if dot_product >= 0.0 { tangent } else { -tangent };
+            // accumulate the tangent force for each neighbor
+            avoidance_force += tangent_direction * delta_time;
         }
 
         prey_pos.0 += desired_velocity + avoidance_force;

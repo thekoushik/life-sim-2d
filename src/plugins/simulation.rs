@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use crate::entities::systems::{
-    setup_entities, update_grid_system
+    setup_entities, update_grid_system, handle_input
 };
 use crate::entities::perception::perception_scan_system;
 use crate::entities::gameloop::game_loop;
@@ -30,7 +30,8 @@ impl Plugin for SimulationPlugin {
         .add_systems(Update, 
             (
                 save_on_keypress,
-                move_camera
+                move_camera,
+                handle_input
             ).chain()
         );
     }

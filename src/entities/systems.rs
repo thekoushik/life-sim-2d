@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, window::PrimaryWindow};
 use rand::Rng;
 use crate::helpers::util::{WORLD_WIDTH, WORLD_HEIGHT};
 use super::components::{
@@ -61,21 +61,7 @@ pub fn setup_entities(mut commands: Commands) {
         commands.spawn(create_prey(
             pos,
             rng.gen_range(0.0..30.0),
-            Genes {
-                vision_range: rng.gen_range(300.0..500.0),
-                laziness: rng.gen_range(0.0..1.0),
-                greed: rng.gen_range(0.0..1.0),
-                curiosity: rng.gen_range(0.0..1.0),
-                wander_radius: rng.gen_range(300.0..600.0),
-                bite_size: rng.gen_range(1.0..10.0),
-                max_speed: rng.gen_range(5.0..10.0),
-                hunger_rate: rng.gen_range(0.5..1.0),
-                max_age: rng.gen_range(100.0..300.0),
-                // aggression: 0.0,
-                // boldness: 0.0,
-                // panic_threshold: 0.0,
-                // smell_range: 0.0,
-            }
+            Genes::default(),
         ));
     }
     
@@ -97,6 +83,56 @@ pub fn update_grid_system(
     }
 }
 
+fn mouse_to_world(
+    q_camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
+    q_windows: Query<&Window, With<PrimaryWindow>>,
+) -> Option<Vec2> {
+    let (camera, camera_transform) = q_camera.single();
+    let window = q_windows.single();
+
+    if let Some(screen_position) = window.cursor_position() {
+        // Convert screen position to world position
+        return camera
+            .viewport_to_world(camera_transform, screen_position)
+            .map(|ray| ray.origin.truncate()) // For 2D, the origin is on the Z=0 plane
+    } else {
+        None
+    }
+}
+
+pub fn handle_input(
+    mut commands: Commands,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
+    q_windows: Query<&Window, With<PrimaryWindow>>,
+    q_camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
+) {
+    let mut rng = rand::thread_rng();
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+
+        if let Some(world_position) = mouse_to_world(q_camera, q_windows) {
+            info!("Mouse clicked at world position: {:?}", world_position);
+            for _ in 0..10 {
+                commands.spawn(create_prey(
+                    world_position.into(),
+                    rng.gen_range(0.0..30.0),
+                    Genes::default(),
+                ));
+            }
+        }
+        
+    } else if mouse_button_input.just_pressed(MouseButton::Right) {
+        if let Some(world_position) = mouse_to_world(q_camera, q_windows) {
+            info!("Mouse right clicked at world position: {:?}", world_position);
+            let count = rng.gen_range(10..30);
+            for _ in 0..count {
+                commands.spawn(create_food(
+                    world_position + Vec2::new(rng.gen_range(-10.0..10.0), rng.gen_range(-10.0..10.0)),
+                    rng.gen_range(10.0..100.0),
+                ));
+            }
+        }
+    }
+}
 
 // pub fn decision_system(
 //     mut query: Query<(&mut Brain, &Needs, &Perception, &Genes)>,

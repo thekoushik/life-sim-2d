@@ -15,6 +15,10 @@ This is a 2D life simulation built with Bevy.
 - Behavior system for controlling entity behavior
 - Genetic system
 - Camera movement with WASD keys
+- Forest like areas for food
+- Entities age and die
+- Click to spawn prey and food
+- Cascade movement for avoiding neighbors
 
 ## Requirements
 - Bevy 0.14.0

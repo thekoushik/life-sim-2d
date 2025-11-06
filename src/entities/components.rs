@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use bevy::utils::HashMap;
 use bevy::math::IVec2;
 use crate::helpers::util::{GREEN, YELLOW, GRAY};
+use rand::Rng;
 
 #[derive(Resource, Default)]
 pub struct SpatialGrid {
@@ -31,6 +32,27 @@ pub struct Genes {
     pub bite_size: f32, // how much food it can eat at once
     pub hunger_rate: f32, // how much hunger it gains per second
     pub max_age: f32, // how long the entity can live
+}
+
+impl Default for Genes {
+    fn default() -> Self {
+        let mut rng = rand::thread_rng();
+        Self {
+            vision_range: rng.gen_range(300.0..500.0),
+            laziness: rng.gen_range(0.0..1.0),
+            greed: rng.gen_range(0.0..1.0),
+            curiosity: rng.gen_range(0.0..1.0),
+            wander_radius: rng.gen_range(300.0..600.0),
+            bite_size: rng.gen_range(1.0..10.0),
+            max_speed: rng.gen_range(5.0..10.0),
+            hunger_rate: rng.gen_range(0.5..1.0),
+            max_age: rng.gen_range(100.0..300.0),
+            // aggression: 0.0,
+            // boldness: 0.0,
+            // panic_threshold: 0.0,
+            // smell_range: 0.0,
+        }
+    }
 }
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
