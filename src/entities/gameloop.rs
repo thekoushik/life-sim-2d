@@ -1,16 +1,18 @@
 use bevy::prelude::*;
 use super::components::{
-    Position, Hunger, BehaviorState, Genes, Perception, Prey, Food, FoodAmount, create_corpse, SimulationSpeed
+    Position, Hunger, BehaviorState, Genes, Perception, Prey, Food, FoodAmount, create_corpse, SimulationSpeed, Age
 };
 
 const COLLISION_RADIUS: f32 = 4.0;
+const REPULSION_STRENGTH: f32 = 50.0;
 
 pub fn game_loop(
   mut commands: Commands,
   mut prey_query: Query<(
       Entity,&mut Position, &mut Hunger, &mut BehaviorState, &Genes,
       &mut Transform,
-      &Perception
+      &Perception,
+      &mut Age
   ), With<Prey>>,
   mut food_query: Query<(Entity,&Position, &mut FoodAmount), (With<Food>, Without<BehaviorState>)>,
   time: Res<Time>,
@@ -24,7 +26,8 @@ pub fn game_loop(
         mut behavior_state,
         genes,
         mut transform,
-        perception
+        perception,
+        mut age
     ) in prey_query.iter_mut() {
         let delta_time = time.delta_seconds() * simulation_speed.0;
         hunger.0 += genes.hunger_rate * delta_time;
@@ -69,6 +72,7 @@ pub fn game_loop(
 
         let mut avoidance_force = Vec2::ZERO;
         if desired_velocity.length() > 0.0 {
+            // avoid neighbors
             for &neighbor_pos in perception.neighbors.iter() {
                 // its the food I am going to eat, so I should not avoid it
                 if let Some(food_pos) = nearest_food_pos {
@@ -77,16 +81,24 @@ pub fn game_loop(
                     }
                 }
                 let distance = prey_pos.0.distance(neighbor_pos);
-                let direction = (prey_pos.0 - neighbor_pos).normalize_or_zero();
+                let repulsion_direction = (prey_pos.0 - neighbor_pos).normalize_or_zero();
                 let strength = (COLLISION_RADIUS - distance) / COLLISION_RADIUS; // Stronger when closer
-                avoidance_force += direction * strength * 50.0 * delta_time;
+                avoidance_force += repulsion_direction * strength * REPULSION_STRENGTH * delta_time;
+
+
+                // Add tangential force for going around
+                let tangent = Vec2::new(-repulsion_direction.y, repulsion_direction.x);
+                
+                // Choose tangent direction based on desired movement
+                let desired_movement_direction = desired_velocity.normalize_or_zero();
+                let dot_product = tangent.dot(desired_movement_direction);
+                let tangent_direction = if dot_product >= 0.0 { tangent } else { -tangent };
+                
+                avoidance_force += tangent_direction * delta_time;
             }
         }
 
         prey_pos.0 += desired_velocity + avoidance_force;
-        // Update position
-        // prey_pos.0.x = prey_pos.0.x.rem_euclid(WORLD_WIDTH);
-        // prey_pos.0.y = prey_pos.0.y.rem_euclid(WORLD_HEIGHT);
         transform.translation = prey_pos.0.extend(0.0);
         if hunger.0 > 50.0 || (hunger.0 < 80.0 && genes.greed > 0.5) {
             *behavior_state = BehaviorState::SeekFood; // Re-seek new Food
@@ -94,6 +106,12 @@ pub fn game_loop(
             *behavior_state = BehaviorState::Sleep;
         } else {
             *behavior_state = BehaviorState::Wander;
+        }
+
+        age.0 += delta_time;
+        if age.0 >= genes.max_age {
+            commands.entity(prey_entity).despawn();
+            commands.spawn(create_corpse(prey_pos.0));
         }
     }
     // Delete foods that are no longer needed

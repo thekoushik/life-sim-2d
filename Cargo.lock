@@ -2330,6 +2330,7 @@ name = "life-sim-2d"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "noisy_bevy",
  "rand",
  "ron",
  "serde",
@@ -2547,6 +2548,15 @@ dependencies = [
  "cfg-if",
  "cfg_aliases 0.2.1",
  "libc",
+]
+
+[[package]]
+name = "noisy_bevy"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a498a5310e40540a941aca31ef341a0b229e11b04fb359c9c023ac412e34465b"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]

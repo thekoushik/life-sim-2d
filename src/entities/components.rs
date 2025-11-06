@@ -30,7 +30,11 @@ pub struct Genes {
     pub max_speed: f32,
     pub bite_size: f32, // how much food it can eat at once
     pub hunger_rate: f32, // how much hunger it gains per second
+    pub max_age: f32, // how long the entity can live
 }
+
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct Age(pub f32);
 
 #[derive(Component, Serialize, Deserialize, Clone, Copy)]
 pub struct Position(pub Vec2);
@@ -97,6 +101,14 @@ pub struct Needs {
 }
 
 
+//TODO: create species config with a genetic config and a name
+// and entities can vary a little bit from the genetic config
+pub struct Species {
+    pub name: String,
+    pub genetic_min: Genes,
+    pub genetic_max: Genes,
+}
+
 pub fn create_food(pos: Vec2, amount: f32) -> (Position, Food, WorldObject, EntityColor, SpriteBundle, FoodAmount) {
     (
         Position(pos),
@@ -115,7 +127,9 @@ pub fn create_food(pos: Vec2, amount: f32) -> (Position, Food, WorldObject, Enti
         FoodAmount(amount),
     )
 }
-pub fn create_prey(pos: Vec2, hunger: f32, gene: Genes) -> (Position, Prey,WorldObject, LivingEntity, EntityColor,Hunger,BehaviorState, Genes,  SpriteBundle, Perception) {
+pub fn create_prey(pos: Vec2, hunger: f32, gene: Genes) -> (
+    Position, Prey,WorldObject, LivingEntity, EntityColor,Hunger,BehaviorState, Genes,  SpriteBundle, Perception, Age
+) {
     (
         Position(pos),
         Prey,
@@ -125,7 +139,6 @@ pub fn create_prey(pos: Vec2, hunger: f32, gene: Genes) -> (Position, Prey,World
         Hunger(hunger),
         BehaviorState::Wander,
         gene,
-        // SenseRadius(sense_radus),
         SpriteBundle {
             sprite: Sprite {
                 color: YELLOW,
@@ -136,6 +149,7 @@ pub fn create_prey(pos: Vec2, hunger: f32, gene: Genes) -> (Position, Prey,World
             ..default()
         },
         Perception::default(),
+        Age(0.0),
     )
 }
 pub fn create_corpse(pos: Vec2) -> (Position, Corpse, WorldObject, SpriteBundle) {

@@ -5,52 +5,72 @@ use super::components::{
     Genes, SpatialGrid, WorldObject,
     create_food, create_prey,
 };
+use noisy_bevy::simplex_noise_2d;
+
+fn spawn_forest(commands: &mut Commands, forest_count: i32, size: f32) {
+    let mut rng = rand::thread_rng();
+    // first, choose n random areas
+    // then we spawn food in those areas based on noise value
+    // this will give us forest like areas
+    let mut areas = Vec::new();
+    for _ in 0..forest_count {
+        areas.push(Vec2::new(
+            rng.gen_range(0.0..WORLD_WIDTH),
+            rng.gen_range(0.0..WORLD_HEIGHT),
+        ));
+    }
+    let half_size = size / 2.0;
+    for area in areas {
+        let density = rng.gen_range(0.5..1.0);
+        let food_count_in_area = (simplex_noise_2d(area) * half_size) + half_size;// might move this count to the area
+        let offset = density * half_size;
+        // in every area, spread food randomly
+        for _ in 0..food_count_in_area as i32 {
+            let pos = Vec2::new(
+                rng.gen_range(area.x - offset..area.x + offset),
+                rng.gen_range(area.y - offset..area.y + offset),
+            );
+            commands.spawn(create_food(pos, rng.gen_range(10.0..100.0)));
+        }
+    }
+}
 
 pub fn setup_entities(mut commands: Commands) {
     // Only spawn default entities if no config was loaded
     let mut rng = rand::thread_rng();
-    // let mut positions: Vec<Vec2> = Vec::new();
-    // let min_distance = 5.0;
+    // use noise to spawn food in a more natural way
 
-    // // Helper: Check if a position is too close to existing ones
-    // let is_position_valid = |pos: Vec2| {
-    //     !positions.iter().any(|&existing| existing.distance(pos) < min_distance)
-    // };
-
-    // // Helper: Generate random position within world bounds
-    // let mut random_pos = || Vec2::new(
-    //     rng.gen_range(min_distance..WORLD_WIDTH - min_distance),
-    //     rng.gen_range(min_distance..WORLD_HEIGHT - min_distance),
-    // );
+    // spawn food randomly
+    // for _ in 0..400 {
+    //     commands.spawn(create_food(
+    //         Vec2::new(
+    //             rng.gen_range(0.0..WORLD_WIDTH),
+    //             rng.gen_range(0.0..WORLD_HEIGHT),
+    //         ),
+    //         rng.gen_range(10.0..100.0)
+    //     ));
+    // }
+    // spawn area based food
+    spawn_forest(&mut commands, rng.gen_range(5..15), rng.gen_range(100.0..200.0));
 
     for _ in 0..1000 {
         let pos = Vec2::new(
             rng.gen_range(0.0..WORLD_WIDTH),
             rng.gen_range(0.0..WORLD_HEIGHT),
         );
-        // let mut pos = random_pos();
-        // let mut attempts = 0;
-        // while !is_position_valid(pos) && attempts < 100 {
-        //     pos = random_pos();
-        //     attempts += 1;
-        // }
-        // if attempts >= 100 {
-        //     warn!("Could not find valid position for Food after 100 attempts. Using last position.");
-        //     continue;
-        // }
-        // positions.push(pos);
         commands.spawn(create_prey(
             pos,
             rng.gen_range(0.0..30.0),
             Genes {
-                vision_range: rng.gen_range(70.0..100.0),
+                vision_range: rng.gen_range(300.0..500.0),
                 laziness: rng.gen_range(0.0..1.0),
                 greed: rng.gen_range(0.0..1.0),
                 curiosity: rng.gen_range(0.0..1.0),
-                wander_radius: rng.gen_range(200.0..500.0),
+                wander_radius: rng.gen_range(300.0..600.0),
                 bite_size: rng.gen_range(1.0..10.0),
                 max_speed: rng.gen_range(5.0..10.0),
                 hunger_rate: rng.gen_range(0.5..1.0),
+                max_age: rng.gen_range(100.0..300.0),
                 // aggression: 0.0,
                 // boldness: 0.0,
                 // panic_threshold: 0.0,
@@ -58,16 +78,8 @@ pub fn setup_entities(mut commands: Commands) {
             }
         ));
     }
-    for _ in 0..200 {
-        commands.spawn(create_food(
-            Vec2::new(
-                rng.gen_range(0.0..WORLD_WIDTH),
-                rng.gen_range(0.0..WORLD_HEIGHT),
-            ),
-            rng.gen_range(10.0..100.0)
-        ));
-    }
-    info!("Spawned 1000 Prey and 200 Food entities");
+    
+    info!("Spawned foods and prey entities");
 }
 
 pub fn update_grid_system(

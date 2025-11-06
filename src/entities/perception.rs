@@ -35,12 +35,15 @@ pub fn perception_scan_system(
           skip_sense = true;
       }
 
+      // we update neighbors always even if they are lazy or sleeping
+      // so we have advantage for other systems to know the position of nearby entities
       perception.neighbors.clear();
       if !skip_sense {
           perception.target_food = None;
           perception.visible_predators.clear();
           
           if *behavior_state == BehaviorState::Wander {
+            // curiosity determines how often the target changes when wandering
               let change_interval = 3.0.lerp(12.0, 1.0 - genes.curiosity);
               if perception.time_since_last_target > change_interval {
                   perception.time_since_last_target = 0.0;
@@ -68,7 +71,7 @@ pub fn perception_scan_system(
                   let other_pos = other_transform.translation.truncate();
                   let dist = pos.distance(other_pos);
 
-                  if dist < NEARBY_AVOIDANCE_DISTANCE { // very close position occupied by others
+                  if dist < NEARBY_AVOIDANCE_DISTANCE { // very close position occupied by something
                       perception.neighbors.push(other_pos);
                   }
                   if !skip_sense {
