@@ -1,103 +1,151 @@
-use bevy::prelude::*;
-use super::components::{
-    SpatialGrid, Genes, Perception, BehaviorState, Prey, Food, Predator, 
-    WorldObject,
-    SimulationSpeed,
-};
+use crate::entities::components::LivingEntity;
 
-const NEIGHBOR_CELLS:[IVec2;9] = [
-    IVec2::new(-1, -1), IVec2::new(-1, 0), IVec2::new(-1, 1),
-    IVec2::new(0, -1),  IVec2::new(0, 0),  IVec2::new(0, 1),
-    IVec2::new(1, -1),  IVec2::new(1, 0),  IVec2::new(1, 1),
+use super::components::{
+    Age, BehaviorState, Corpse, CorpseState, Food, Genes, Needs, Perception, Position, Predator,
+    Prey, SimulationSpeed, SpatialGrid, WorldObject,
+};
+use bevy::prelude::*;
+
+const NEIGHBOR_CELLS: [IVec2; 9] = [
+    IVec2::new(-1, -1),
+    IVec2::new(-1, 0),
+    IVec2::new(-1, 1),
+    IVec2::new(0, -1),
+    IVec2::new(0, 0),
+    IVec2::new(0, 1),
+    IVec2::new(1, -1),
+    IVec2::new(1, 0),
+    IVec2::new(1, 1),
 ];
 const NEARBY_AVOIDANCE_DISTANCE: f32 = 5.0;
+const MATE_DETECTION_DISTANCE: f32 = 10.0;
 
 pub fn perception_scan_system(
-  grid: Res<SpatialGrid>,
-  mut query: Query<(Entity, &Transform, &Genes, &mut Perception, &BehaviorState), With<Prey>>,
-  lookup_query: Query<&Transform, With<WorldObject>>,
-  food_query: Query<Entity, With<Food>>,
-  predator_query: Query<Entity, With<Predator>>,
-  time: Res<Time>,
-  simulation_speed: Res<SimulationSpeed>
+    grid: Res<SpatialGrid>,
+    mut query: Query<
+        (
+            Entity,
+            &Transform,
+            &Genes,
+            &mut Perception,
+            &BehaviorState,
+            &Needs,
+        ),
+        With<Prey>,
+    >,
+    lookup_query: Query<&Position, With<WorldObject>>,
+    food_query: Query<Entity, With<Food>>,
+    predator_query: Query<Entity, With<Predator>>,
+    corpse_query: Query<&CorpseState, With<Corpse>>,
+    needs_query: Query<(&Needs, &Genes), With<LivingEntity>>,
+    time: Res<Time>,
+    simulation_speed: Res<SimulationSpeed>,
 ) {
-  let delta_time = time.delta_seconds() * simulation_speed.0;
-  for (
-      entity, transform, genes, mut perception, behavior_state
-  ) in query.iter_mut() {
-      perception.time_since_last_sense += delta_time;
-      perception.time_since_last_target += delta_time;
-      let mut skip_sense = false;
+    let delta_time = time.delta_seconds() * simulation_speed.0;
+    for (entity, transform, genes, mut perception, behavior_state, needs) in query.iter_mut() {
+        perception.time_since_last_sense += delta_time;
+        perception.time_since_last_target += delta_time;
+        let mut skip_sense = false;
 
-      if perception.time_since_last_sense < (genes.laziness * 5.0) || *behavior_state == BehaviorState::Sleep {
-          // too lazy or sleeping would not be able to see nearby entities
-          // but should know the position of nearby entities so we can avoid them
-          skip_sense = true;
-      }
+        if perception.time_since_last_sense < (genes.laziness * 5.0)
+            || *behavior_state == BehaviorState::Sleep
+        {
+            // too lazy or sleeping would not be able to see nearby entities
+            // but should know the position of nearby entities so we can avoid them
+            skip_sense = true;
+        }
 
-      // we update neighbors always even if they are lazy or sleeping
-      // so we have advantage for other systems to know the position of nearby entities
-      perception.neighbors.clear();
-      if !skip_sense {
-          perception.target_food = None;
-          perception.visible_predators.clear();
-          
-          if *behavior_state == BehaviorState::Wander {
-            // curiosity determines how often the target changes when wandering
-              let change_interval = 3.0.lerp(12.0, 1.0 - genes.curiosity);
-              if perception.time_since_last_target > change_interval {
-                  perception.time_since_last_target = 0.0;
-                  let angle = rand::random::<f32>() * std::f32::consts::TAU;
-                  let distance = rand::random::<f32>() * genes.wander_radius;
-                  perception.target = Some(transform.translation.truncate() + Vec2::from_angle(angle) * distance);
-              }
-          } else {
-              perception.target = None;
-          }
-      }
+        // we update neighbors always even if they are lazy or sleeping
+        // so we have advantage for other systems to know the position of nearby entities
+        perception.neighbors.clear();
+        if !skip_sense {
+            perception.target_food = None;
+            perception.visible_predators.clear();
+            perception.nearby_corpses.clear();
+            perception.nearby_mates.clear();
 
-      let pos = transform.translation.truncate();
-      let cell = IVec2::new(
-          (pos.x / grid.cell_size).floor() as i32,
-          (pos.y / grid.cell_size).floor() as i32,
-      );
-      let mut visible_food: Vec<(Entity, f32)> = Vec::new();
-      for offset in NEIGHBOR_CELLS {
-          if let Some(entities) = grid.buckets.get(&(cell + offset)) {
-              for &other in entities {
-                  if other == entity { continue; }
-                  let Ok(other_transform) = lookup_query.get(other) else { continue; };
+            if *behavior_state == BehaviorState::Wander || needs.sanity < 0.1 {
+                // curiosity determines how often the target changes when wandering
+                let change_interval = 3.0.lerp(12.0, 1.0 - genes.curiosity);
+                if perception.time_since_last_target > change_interval {
+                    perception.time_since_last_target = 0.0;
+                    let angle = rand::random::<f32>() * std::f32::consts::TAU;
+                    let distance = if needs.sanity < 0.1 {
+                        genes.wander_radius
+                    } else {
+                        rand::random::<f32>() * genes.wander_radius
+                    };
+                    perception.target =
+                        Some(transform.translation.truncate() + Vec2::from_angle(angle) * distance);
+                }
+            } else {
+                perception.target = None;
+            }
+        }
 
-                  let other_pos = other_transform.translation.truncate();
-                  let dist = pos.distance(other_pos);
+        let pos = transform.translation.truncate();
+        let cell = IVec2::new(
+            (pos.x / grid.cell_size).floor() as i32,
+            (pos.y / grid.cell_size).floor() as i32,
+        );
+        let mut visible_food: Vec<(Entity, f32)> = Vec::new();
+        for offset in NEIGHBOR_CELLS {
+            if let Some(entities) = grid.buckets.get(&(cell + offset)) {
+                for &other in entities {
+                    if other == entity {
+                        continue;
+                    }
+                    let Ok(other_pos) = lookup_query.get(other) else {
+                        continue;
+                    };
 
-                  if dist < NEARBY_AVOIDANCE_DISTANCE { // very close position occupied by something
-                      perception.neighbors.push(other_pos);
-                  }
-                  if !skip_sense {
-                      // if other is food
-                      if food_query.get(other).is_ok() && dist < genes.vision_range {
-                          visible_food.push((other, dist));
-                      }
-                      // if other is predator
-                      if predator_query.get(other).is_ok() && dist < genes.vision_range {
-                          perception.visible_predators.push(other);
-                      }
-                  }
-              }
-          }
-      }
-      if !visible_food.is_empty() {
-          if rand::random::<f32>() < 0.8 {
-              // 80% chance to prefer closer target
-              visible_food.sort_by(|a, b| a.1.total_cmp(&b.1));
-              perception.target_food = Some(visible_food[0].0);
-          } else {
-              // 20% chance to make a "mistake" and pick a random one
-              let idx = rand::random::<usize>() % visible_food.len();
-              perception.target_food = Some(visible_food[idx].0);
-          }
-      }
-      // info!("Entity {:?} sees {} food", entity, perception.visible_food.len() );
-  }
+                    let dist = pos.distance(other_pos.0);
+
+                    if dist < NEARBY_AVOIDANCE_DISTANCE {
+                        // very close position occupied by something
+                        perception.neighbors.push(other_pos.0);
+                    }
+                    if dist < MATE_DETECTION_DISTANCE && needs.mate_ready {
+                        if let Ok((other_needs, other_genes)) = needs_query.get(other) {
+                            if other_needs.mate_ready && other_genes.gender != genes.gender {
+                                perception.nearby_mates.push(other);
+                            }
+                        }
+                    }
+                    if !skip_sense {
+                        // if other is corpse
+                        if let Ok(corpse_state) = corpse_query.get(other) {
+                            if dist < genes.vision_range {
+                                // stench is stronger when closer and weaker when further away
+                                let stench = (100.0 - corpse_state.decay_timer) / dist;
+                                perception.nearby_corpses.push((other_pos.0, stench));
+                            }
+                        }
+                        if needs.sanity > 0.1 {
+                            // if other is food
+                            if food_query.get(other).is_ok() && dist < genes.vision_range {
+                                visible_food.push((other, dist));
+                            }
+                            // if other is predator
+                            if predator_query.get(other).is_ok() && dist < genes.vision_range {
+                                perception.visible_predators.push(other);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !visible_food.is_empty() {
+            if rand::random::<f32>() < 0.5 {
+                // 50% chance to prefer closer target
+                visible_food.sort_by(|a, b| a.1.total_cmp(&b.1));
+                perception.target_food = Some(visible_food[0].0);
+            } else {
+                // 50% chance to make a "mistake" and pick a random one
+                let idx = rand::random::<usize>() % visible_food.len();
+                perception.target_food = Some(visible_food[idx].0);
+            }
+        }
+        // info!("Entity {:?} sees {} food", entity, perception.visible_food.len() );
+    }
 }

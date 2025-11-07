@@ -1,11 +1,21 @@
-use bevy::{prelude::*, window::PrimaryWindow};
-use rand::Rng;
-use crate::helpers::util::{WORLD_WIDTH, WORLD_HEIGHT};
 use super::components::{
-    Genes, SpatialGrid, WorldObject,
-    create_food, create_prey,
+    Age, BehaviorState, Corpse, CorpseState, Genes, LivingEntity, Needs, Position, Prey,
+    SimulationSpeed, SpatialGrid, WorldObject, create_corpse, create_food, create_prey,
+    mutate_genes,
 };
+use crate::{
+    entities::components::Perception,
+    helpers::util::{WORLD_HEIGHT, WORLD_WIDTH},
+};
+use bevy::{prelude::*, window::PrimaryWindow};
 use noisy_bevy::simplex_noise_2d;
+use rand::Rng;
+const DEFAULT_SANITY_GAIN_RATE: f32 = 0.01;
+const MATE_DETECTION_AGE_THRESHOLD_MIN: f32 = 0.2;
+const MATE_DETECTION_AGE_THRESHOLD_MAX: f32 = 0.6;
+const MATE_READY_SANITY_THRESHOLD: f32 = 0.6;
+const MATE_READY_HUNGER_THRESHOLD: f32 = 90.0;
+const MATE_READY_ENERGY_THRESHOLD: f32 = 0.9;
 
 fn spawn_forest(commands: &mut Commands, forest_count: i32, size: f32) {
     let mut rng = rand::thread_rng();
@@ -22,7 +32,7 @@ fn spawn_forest(commands: &mut Commands, forest_count: i32, size: f32) {
     let half_size = size / 2.0;
     for area in areas {
         let density = rng.gen_range(0.5..1.0);
-        let food_count_in_area = (simplex_noise_2d(area) * half_size) + half_size;// might move this count to the area
+        let food_count_in_area = (simplex_noise_2d(area) * half_size) + half_size; // might move this count to the area
         let offset = density * half_size;
         // in every area, spread food randomly
         for _ in 0..food_count_in_area as i32 {
@@ -38,33 +48,21 @@ fn spawn_forest(commands: &mut Commands, forest_count: i32, size: f32) {
 pub fn setup_entities(mut commands: Commands) {
     // Only spawn default entities if no config was loaded
     let mut rng = rand::thread_rng();
-    // use noise to spawn food in a more natural way
-
-    // spawn food randomly
-    // for _ in 0..400 {
-    //     commands.spawn(create_food(
-    //         Vec2::new(
-    //             rng.gen_range(0.0..WORLD_WIDTH),
-    //             rng.gen_range(0.0..WORLD_HEIGHT),
-    //         ),
-    //         rng.gen_range(10.0..100.0)
-    //     ));
-    // }
     // spawn area based food
-    spawn_forest(&mut commands, rng.gen_range(5..15), rng.gen_range(100.0..200.0));
+    spawn_forest(
+        &mut commands,
+        rng.gen_range(20..30),
+        rng.gen_range(100.0..200.0),
+    );
 
-    for _ in 0..1000 {
+    for _ in 0..2000 {
         let pos = Vec2::new(
             rng.gen_range(0.0..WORLD_WIDTH),
             rng.gen_range(0.0..WORLD_HEIGHT),
         );
-        commands.spawn(create_prey(
-            pos,
-            rng.gen_range(0.0..30.0),
-            Genes::default(),
-        ));
+        commands.spawn(create_prey(pos, Genes::default()));
     }
-    
+
     info!("Spawned foods and prey entities");
 }
 
@@ -83,6 +81,133 @@ pub fn update_grid_system(
     }
 }
 
+pub fn update_entities(
+    mut commands: Commands,
+    mut query: Query<
+        (
+            Entity,
+            &mut Needs,
+            &Genes,
+            &mut Age,
+            &Position,
+            &Perception,
+            &mut BehaviorState,
+            &mut Transform,
+        ),
+        With<Prey>,
+    >,
+    mut corpse_query: Query<(Entity, &mut CorpseState, &Position), With<Corpse>>,
+    // needs_query: Query<&Needs, With<LivingEntity>>,
+    time: Res<Time>,
+    simulation_speed: Res<SimulationSpeed>,
+) {
+    let delta_time = time.delta_seconds() * simulation_speed.0;
+    let mut rng = rand::thread_rng();
+    // update needs and age
+    for (entity, mut needs, genes, mut age, pos, perception, mut behavior_state, mut transform) in
+        query.iter_mut()
+    {
+        let mut sanity_gain = DEFAULT_SANITY_GAIN_RATE;
+        needs.hunger += genes.hunger_rate * delta_time;
+        needs.hunger = needs.hunger.clamp(0.0, 100.0);
+        if needs.hunger > 90.0 {
+            sanity_gain = -0.1; // hungry = sanity decrease
+        }
+        if needs.hunger >= 100.0 {
+            needs.energy *= 0.1 * delta_time; // max hungry = energy decrease
+        } else {
+            // TODO: verify this formula
+            needs.energy += 0.1 * delta_time * ((100.0 - needs.hunger) / 100.0); // less hungry = more energy
+        }
+        needs.energy = needs.energy.clamp(0.0, 1.0);
+        age.0 += delta_time;
+        needs.sanity += delta_time * sanity_gain;
+        needs.sanity = needs.sanity.clamp(0.0, 1.0);
+        needs.mate_ready = needs.partner.is_none()
+            && age.0 >= MATE_DETECTION_AGE_THRESHOLD_MIN
+            && age.0 <= MATE_DETECTION_AGE_THRESHOLD_MAX
+            && needs.sanity >= MATE_READY_SANITY_THRESHOLD
+            && needs.hunger < MATE_READY_HUNGER_THRESHOLD
+            && needs.energy >= MATE_READY_ENERGY_THRESHOLD
+            && !needs.pregnant
+            && needs.pregnancy_timer <= 0.0;
+        // if there is a partner, decrease the partner timer
+        if needs.partner.is_some() {
+            needs.partner_timer -= delta_time;
+            if needs.partner_timer <= 0.0 {
+                needs.partner = None;
+                needs.partner_timer = 0.0;
+            }
+        }
+        needs.mating_timer -= delta_time;
+        needs.mating_timer = needs.mating_timer.clamp(0.0, 1.0);
+        if genes.gender == false {
+            needs.pregnancy_timer -= delta_time;
+            needs.pregnancy_timer = needs.pregnancy_timer.clamp(0.0, 1.0);
+        }
+
+        // update partner(for male)
+        // if genes.gender == true && needs.partner.is_none() && needs.mate_ready {
+        //     for &mate_entity in perception.nearby_mates.iter() {
+        //         if let Ok(mate_needs) = needs_query.get(mate_entity) {
+        //             if mate_needs.partner == Some(entity) {
+        //                 // I am the partner of the other entity
+        //                 needs.partner = Some(mate_entity);
+        //                 needs.partner_timer = rng.gen_range(10.0..30.0);
+        //                 break;
+        //             }
+        //         }
+        //     }
+        // }
+
+        transform.translation = pos.0.extend(0.0);
+        if needs.hunger > 50.0 || (needs.hunger < 80.0 && genes.greed > 0.5) {
+            *behavior_state = BehaviorState::SeekFood; // Re-seek new Food
+        } else if genes.laziness > 0.5 {
+            *behavior_state = BehaviorState::Sleep;
+        } else {
+            *behavior_state = BehaviorState::Wander;
+        }
+
+        // update age and death
+        if age.0 >= genes.max_age || (needs.hunger >= 100.0 && needs.energy <= 0.0) {
+            commands.entity(entity).despawn();
+            // TODO: implement corpse creation here and body flesh amount to be used for food amount
+            commands.spawn(create_corpse(pos.0, rng.gen_range(10.0..50.0)));
+        } else if needs.pregnant && needs.partner.is_some() {
+            // update pregnancy
+            if needs.pregnancy_timer <= 0.0 {
+                needs.pregnant = false;
+                needs.energy *= 0.1; // energy decrease after giving birth
+                needs.pregnancy_timer = rng.gen_range(10.0..30.0); // backoff timer after giving birth
+                // spawn offspring
+                let offspring_count = if genes.max_offspring_count < 2 {
+                    1
+                } else {
+                    rng.gen_range(1..genes.max_offspring_count)
+                };
+                let father_genes = needs.partner_genes.clone().unwrap();
+                for _ in 0..offspring_count {
+                    let new_genes = mutate_genes(&genes, &father_genes);
+                    let mut child = create_prey(pos.0, new_genes);
+                    child.10.mother = Some(entity); // set the mother of the child
+                    commands.spawn(child);
+                }
+                needs.partner = None;
+                needs.partner_genes = None;
+                // needs.partner_timer = 0.0;
+            }
+        }
+    }
+    for (entity, mut corpse_state, pos) in corpse_query.iter_mut() {
+        corpse_state.decay_timer -= delta_time * corpse_state.decay_rate;
+        if corpse_state.decay_timer <= 0.0 {
+            commands.entity(entity).despawn();
+            commands.spawn(create_food(pos.0, corpse_state.flesh_amount));
+        }
+    }
+}
+
 fn mouse_to_world(
     q_camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
@@ -94,7 +219,7 @@ fn mouse_to_world(
         // Convert screen position to world position
         return camera
             .viewport_to_world(camera_transform, screen_position)
-            .map(|ray| ray.origin.truncate()) // For 2D, the origin is on the Z=0 plane
+            .map(|ray| ray.origin.truncate()); // For 2D, the origin is on the Z=0 plane
     } else {
         None
     }
@@ -108,25 +233,23 @@ pub fn handle_input(
 ) {
     let mut rng = rand::thread_rng();
     if mouse_button_input.just_pressed(MouseButton::Left) {
-
         if let Some(world_position) = mouse_to_world(q_camera, q_windows) {
             info!("Mouse clicked at world position: {:?}", world_position);
             for _ in 0..10 {
-                commands.spawn(create_prey(
-                    world_position.into(),
-                    rng.gen_range(0.0..30.0),
-                    Genes::default(),
-                ));
+                commands.spawn(create_prey(world_position.into(), Genes::default()));
             }
         }
-        
     } else if mouse_button_input.just_pressed(MouseButton::Right) {
         if let Some(world_position) = mouse_to_world(q_camera, q_windows) {
-            info!("Mouse right clicked at world position: {:?}", world_position);
+            info!(
+                "Mouse right clicked at world position: {:?}",
+                world_position
+            );
             let count = rng.gen_range(10..30);
             for _ in 0..count {
                 commands.spawn(create_food(
-                    world_position + Vec2::new(rng.gen_range(-10.0..10.0), rng.gen_range(-10.0..10.0)),
+                    world_position
+                        + Vec2::new(rng.gen_range(-10.0..10.0), rng.gen_range(-10.0..10.0)),
                     rng.gen_range(10.0..100.0),
                 ));
             }
@@ -165,22 +288,5 @@ pub fn handle_input(
 //             let distance = rand::random::<f32>() * genes.wander_radius;
 //             brain.target = Some(transform.translation.truncate() + Vec2::from_angle(angle) * distance);
 //         }
-//     }
-// }
-
-// fn mutate_genes(parent: &Genes) -> Genes {
-//     let mut rng = rand::thread_rng();
-//     let mutate = |v: f32| (v + rng.gen_range(-0.05..0.05)).clamp(0.0, 1.0);
-//     Genes {
-//         curiosity: mutate(parent.curiosity),
-//         boldness: mutate(parent.boldness),
-//         greed: mutate(parent.greed),
-//         laziness: mutate(parent.laziness),
-//         panic_threshold: mutate(parent.panic_threshold),
-//         aggression: mutate(parent.aggression),
-//         vision_range: (parent.vision_range + rng.gen_range(-2.0..2.0)).max(1.0),
-//         smell_range: (parent.smell_range + rng.gen_range(-2.0..2.0)).max(1.0),
-//         wander_radius: (parent.wander_radius + rng.gen_range(-5.0..5.0)).max(1.0),
-//         max_speed: (parent.max_speed + rng.gen_range(-0.2..0.2)).max(0.1),
 //     }
 // }

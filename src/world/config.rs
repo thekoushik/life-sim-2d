@@ -3,7 +3,7 @@ use ron::from_str;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-use crate::entities::components::{Position, Prey, Food, EntityColor, Hunger, BehaviorState};
+use crate::entities::components::{Position, Prey, Food, EntityColor, Needs, BehaviorState};
 
 #[derive(Serialize, Deserialize)]
 struct SimConfig {
@@ -44,7 +44,7 @@ pub fn load_config(mut commands: Commands) {
                             },
                         ));
                         if let Some(hunger) = entity.hunger {
-                            entity_commands.insert(Hunger(hunger));
+                            entity_commands.insert(Needs { hunger, ..Default::default() });
                         }
                         if entity.entity_type.as_str() == "Food" {
                             entity_commands.insert(Food);
@@ -78,10 +78,10 @@ pub fn load_config(mut commands: Commands) {
     }
 }
 
-pub fn save_config(query: Query<(&Position, Option<&Food>, Option<&Prey>, &EntityColor, Option<&Hunger>, Option<&BehaviorState>)>) {
+pub fn save_config(query: Query<(&Position, Option<&Food>, Option<&Prey>, &EntityColor, Option<&Needs>, Option<&BehaviorState>)>) {
     let entities: Vec<EntityConfig> = query
         .iter()
-        .map(|(pos, _food, prey, color, hunger, behavior_state)| {
+        .map(|(pos, _food, prey, color, needs, behavior_state)| {
             let (r, g, b, a) = match color.0 {
                 Color::Srgba(Srgba { red, green, blue, alpha, .. }) => {
                     (red, green, blue, alpha)
@@ -97,7 +97,7 @@ pub fn save_config(query: Query<(&Position, Option<&Food>, Option<&Prey>, &Entit
                 position: (pos.0.x, pos.0.y),
                 entity_type,
                 color: (r, g, b, a),
-                hunger: hunger.map(|h| h.0),
+                hunger: needs.map(|h| h.hunger),
                 behavior_state: behavior_state.map(|s| match s {
                     BehaviorState::SeekFood => "SeekFood".to_string(),
                     BehaviorState::Sleep => "Sleep".to_string(),
