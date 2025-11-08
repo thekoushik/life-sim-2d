@@ -1,8 +1,8 @@
 use crate::entities::components::LivingEntity;
 
 use super::components::{
-    Age, BehaviorState, Corpse, CorpseState, Food, Genes, Needs, Perception, Position, Predator,
-    Prey, SimulationSpeed, SpatialGrid, WorldObject,
+    BehaviorState, Corpse, CorpseState, Food, Genes, Needs, Perception, Position, Predator, Prey,
+    SimulationSpeed, SpatialGrid, SpeciesId, WorldObject,
 };
 use bevy::prelude::*;
 
@@ -30,6 +30,7 @@ pub fn perception_scan_system(
             &mut Perception,
             &BehaviorState,
             &Needs,
+            &SpeciesId,
         ),
         With<Prey>,
     >,
@@ -37,12 +38,14 @@ pub fn perception_scan_system(
     food_query: Query<Entity, With<Food>>,
     predator_query: Query<Entity, With<Predator>>,
     corpse_query: Query<&CorpseState, With<Corpse>>,
-    needs_query: Query<(&Needs, &Genes), With<LivingEntity>>,
+    needs_query: Query<(&Needs, &Genes, &SpeciesId), With<LivingEntity>>,
     time: Res<Time>,
     simulation_speed: Res<SimulationSpeed>,
 ) {
     let delta_time = time.delta_seconds() * simulation_speed.0;
-    for (entity, transform, genes, mut perception, behavior_state, needs) in query.iter_mut() {
+    for (entity, transform, genes, mut perception, behavior_state, needs, species_id) in
+        query.iter_mut()
+    {
         perception.time_since_last_sense += delta_time;
         perception.time_since_last_target += delta_time;
         let mut skip_sense = false;
@@ -111,8 +114,14 @@ pub fn perception_scan_system(
                         perception.neighbors.push(other_pos.0);
                     }
                     if dist < MATE_DETECTION_DISTANCE && needs.mate_ready {
-                        if let Ok((other_needs, other_genes)) = needs_query.get(other) {
-                            if other_needs.mate_ready && other_genes.gender != genes.gender {
+                        if let Ok((other_needs, other_genes, other_species_id)) =
+                            needs_query.get(other)
+                        {
+                            // always choose same species for mating
+                            if other_needs.mate_ready
+                                && other_genes.gender != genes.gender
+                                && other_species_id.0 == species_id.0
+                            {
                                 perception.nearby_mates.push(other);
                             }
                         }

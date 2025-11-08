@@ -1,7 +1,6 @@
 use super::components::{
-    Age, BehaviorState, Corpse, CorpseState, Genes, LivingEntity, Needs, Position, Prey,
-    SimulationSpeed, SpatialGrid, WorldObject, create_corpse, create_food, create_prey,
-    mutate_genes,
+    Age, BehaviorState, Corpse, CorpseState, Genes, Needs, Position, Prey, SimulationSpeed,
+    SpatialGrid, Species, SpeciesId, WorldObject, create_corpse, create_food, create_prey,
 };
 use crate::{
     entities::components::Perception,
@@ -12,8 +11,8 @@ use noisy_bevy::simplex_noise_2d;
 use rand::Rng;
 const DEFAULT_SANITY_GAIN_RATE: f32 = 0.01;
 const MATE_DETECTION_AGE_THRESHOLD_MIN: f32 = 0.2;
-const MATE_DETECTION_AGE_THRESHOLD_MAX: f32 = 0.6;
-const MATE_READY_SANITY_THRESHOLD: f32 = 0.6;
+const MATE_DETECTION_AGE_THRESHOLD_MAX: f32 = 0.8;
+const MATE_READY_SANITY_THRESHOLD: f32 = 0.5;
 const MATE_READY_HUNGER_THRESHOLD: f32 = 90.0;
 const MATE_READY_ENERGY_THRESHOLD: f32 = 0.9;
 
@@ -55,12 +54,24 @@ pub fn setup_entities(mut commands: Commands) {
         rng.gen_range(100.0..200.0),
     );
 
+    let mut vec_species = Vec::new();
+    let species_count = rng.gen_range(5..10);
+    for i in 0..species_count {
+        let genetic_min = Genes::default();
+        vec_species.push(Species {
+            id: SpeciesId(i as u32),
+            genetic_min: genetic_min.clone(),
+            genetic_max: genetic_min.random_variation(),
+        });
+    }
+
     for _ in 0..2000 {
         let pos = Vec2::new(
             rng.gen_range(0.0..WORLD_WIDTH),
             rng.gen_range(0.0..WORLD_HEIGHT),
         );
-        commands.spawn(create_prey(pos, Genes::default()));
+        let species = vec_species[rng.gen_range(0..vec_species.len())];
+        commands.spawn(create_prey(pos, species.id, species.random_gene()));
     }
 
     info!("Spawned foods and prey entities");
@@ -90,9 +101,9 @@ pub fn update_entities(
             &Genes,
             &mut Age,
             &Position,
-            &Perception,
             &mut BehaviorState,
             &mut Transform,
+            &SpeciesId,
         ),
         With<Prey>,
     >,
@@ -104,7 +115,7 @@ pub fn update_entities(
     let delta_time = time.delta_seconds() * simulation_speed.0;
     let mut rng = rand::thread_rng();
     // update needs and age
-    for (entity, mut needs, genes, mut age, pos, perception, mut behavior_state, mut transform) in
+    for (entity, mut needs, genes, mut age, pos, mut behavior_state, mut transform, species_id) in
         query.iter_mut()
     {
         let mut sanity_gain = DEFAULT_SANITY_GAIN_RATE;
@@ -179,7 +190,7 @@ pub fn update_entities(
             if needs.pregnancy_timer <= 0.0 {
                 needs.pregnant = false;
                 needs.energy *= 0.1; // energy decrease after giving birth
-                needs.pregnancy_timer = rng.gen_range(10.0..30.0); // backoff timer after giving birth
+                needs.pregnancy_timer = rng.gen_range(3.0..6.0); // backoff timer after giving birth
                 // spawn offspring
                 let offspring_count = if genes.max_offspring_count < 2 {
                     1
@@ -188,8 +199,8 @@ pub fn update_entities(
                 };
                 let father_genes = needs.partner_genes.clone().unwrap();
                 for _ in 0..offspring_count {
-                    let new_genes = mutate_genes(&genes, &father_genes);
-                    let mut child = create_prey(pos.0, new_genes);
+                    let new_genes = genes.mutate(&father_genes);
+                    let mut child = create_prey(pos.0, species_id.clone(), new_genes);
                     child.10.mother = Some(entity); // set the mother of the child
                     commands.spawn(child);
                 }
@@ -236,7 +247,11 @@ pub fn handle_input(
         if let Some(world_position) = mouse_to_world(q_camera, q_windows) {
             info!("Mouse clicked at world position: {:?}", world_position);
             for _ in 0..10 {
-                commands.spawn(create_prey(world_position.into(), Genes::default()));
+                commands.spawn(create_prey(
+                    world_position.into(),
+                    SpeciesId(0),
+                    Genes::default(),
+                ));
             }
         }
     } else if mouse_button_input.just_pressed(MouseButton::Right) {

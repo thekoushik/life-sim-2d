@@ -14,7 +14,7 @@ pub struct SpatialGrid {
 #[derive(Resource)]
 pub struct SimulationSpeed(pub f32);
 
-#[derive(Component, Clone)]
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Genes {
     // personality traits (0.0 - 1.0 range)
     pub sociality: f32, // 0.0 = introvert, 1.0 = extrovert
@@ -60,6 +60,39 @@ impl Default for Genes {
             // boldness: 0.0,
             // panic_threshold: 0.0,
         }
+    }
+}
+impl Genes {
+    pub fn random_variation(&self) -> Genes {
+        let mut rng = rand::thread_rng();
+        let mut new_gene = self.clone();
+        new_gene.sociality = rng.gen_range(self.sociality - 0.1..self.sociality + 0.1);
+        new_gene.vision_range = rng.gen_range(self.vision_range - 100.0..self.vision_range + 100.0);
+        new_gene.wander_radius =
+            rng.gen_range(self.wander_radius - 100.0..self.wander_radius + 100.0);
+        new_gene.bite_size = self.bite_size;
+        new_gene.max_speed = self.max_speed;
+        new_gene.hunger_rate = self.hunger_rate;
+        new_gene.max_age = self.max_age;
+        new_gene.gender = rng.gen_bool(0.5);
+        new_gene.max_offspring_count = self.max_offspring_count;
+        new_gene.can_produce_food = self.can_produce_food;
+        new_gene
+    }
+    pub fn mutate(&self, father: &Genes) -> Genes {
+        let mut rng = rand::thread_rng();
+        let mut new_gene = self.clone();
+        new_gene.sociality = (self.sociality + father.sociality) / 2.0;
+        new_gene.vision_range = (self.vision_range + father.vision_range) / 2.0;
+        new_gene.wander_radius = (self.wander_radius + father.wander_radius) / 2.0;
+        new_gene.bite_size = (self.bite_size + father.bite_size) / 2.0;
+        new_gene.max_speed = (self.max_speed + father.max_speed) / 2.0;
+        new_gene.hunger_rate = (self.hunger_rate + father.hunger_rate) / 2.0;
+        new_gene.max_age = (self.max_age + father.max_age) / 2.0;
+        new_gene.gender = rng.gen_bool(0.5);
+        new_gene.max_offspring_count = (self.max_offspring_count + father.max_offspring_count) / 2;
+        new_gene.can_produce_food = self.can_produce_food || father.can_produce_food;
+        new_gene
     }
 }
 
@@ -130,7 +163,7 @@ pub struct Perception {
 
 #[derive(Component)]
 pub struct Needs {
-    pub fear: f32,   // high fear = slower movement
+    // pub fear: f32,   // high fear = slower movement
     pub sanity: f32, // low sanity = more aggressive
 
     pub hunger: f32, // hunger should influence sanity
@@ -150,7 +183,7 @@ pub struct Needs {
 impl Default for Needs {
     fn default() -> Self {
         Self {
-            fear: 0.0,
+            // fear: 0.0,
             sanity: 1.0,
             hunger: 0.0,
             energy: 1.0,
@@ -165,13 +198,23 @@ impl Default for Needs {
         }
     }
 }
-//TODO: create species config with a genetic config and a name
+
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct SpeciesId(pub u32);
+
 // and entities can vary a little bit from the genetic config
-// pub struct Species {
-//     pub name: String,
-//     pub genetic_min: Genes,
-//     pub genetic_max: Genes,
-// }
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct Species {
+    pub id: SpeciesId,
+    pub genetic_min: Genes,
+    pub genetic_max: Genes,
+}
+
+impl Species {
+    pub fn random_gene(&self) -> Genes {
+        self.genetic_min.mutate(&self.genetic_max)
+    }
+}
 
 pub fn create_food(
     pos: Vec2,
@@ -203,6 +246,7 @@ pub fn create_food(
 }
 pub fn create_prey(
     pos: Vec2,
+    speciesId: SpeciesId,
     gene: Genes,
 ) -> (
     Position,
@@ -216,6 +260,7 @@ pub fn create_prey(
     Perception,
     Age,
     Needs,
+    SpeciesId,
 ) {
     (
         Position(pos),
@@ -237,6 +282,7 @@ pub fn create_prey(
         Perception::default(),
         Age(0.0),
         Needs::default(),
+        speciesId,
     )
 }
 pub fn create_corpse(
@@ -262,20 +308,4 @@ pub fn create_corpse(
             decay_timer: 100.0,
         },
     )
-}
-
-pub fn mutate_genes(mother: &Genes, father: &Genes) -> Genes {
-    let mut rng = rand::thread_rng();
-    let mut new_gene = mother.clone();
-    new_gene.sociality = (mother.sociality + father.sociality) / 2.0;
-    new_gene.vision_range = (mother.vision_range + father.vision_range) / 2.0;
-    new_gene.wander_radius = (mother.wander_radius + father.wander_radius) / 2.0;
-    new_gene.bite_size = (mother.bite_size + father.bite_size) / 2.0;
-    new_gene.max_speed = (mother.max_speed + father.max_speed) / 2.0;
-    new_gene.hunger_rate = (mother.hunger_rate + father.hunger_rate) / 2.0;
-    new_gene.max_age = (mother.max_age + father.max_age) / 2.0;
-    new_gene.gender = rng.gen_bool(0.5);
-    new_gene.max_offspring_count = (mother.max_offspring_count + father.max_offspring_count) / 2;
-    new_gene.can_produce_food = mother.can_produce_food || father.can_produce_food;
-    new_gene
 }

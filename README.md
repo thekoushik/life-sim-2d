@@ -21,6 +21,7 @@ This is a 2D life simulation built with Bevy.
 - Click to spawn prey and food
 - Cascade movement for avoiding neighbors
 - Basic reproduction system
+- Species system for grouping entities
 
 ## Requirements
 
@@ -31,10 +32,11 @@ This is a 2D life simulation built with Bevy.
 
 - [x] Reproduction system for entities
 - [x] Simulation speed
+- [x] Add species system for grouping entities
+- [ ] Same species herd formation
 - [ ] Performance optimizations
 - [ ] Add more complex evolution
 - [ ] Needs system for tracking entity needs
-- [ ] Add species system for grouping entities
 - [ ] Add predators(Red) system for hunting prey
 - [ ] Add corpse and decay system
 - [ ] Add more complex behavior
