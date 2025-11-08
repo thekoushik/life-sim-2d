@@ -46,13 +46,16 @@ pub fn perception_scan_system(
         perception.time_since_last_sense += delta_time;
         perception.time_since_last_target += delta_time;
         let mut skip_sense = false;
+        let laziness_threshold = genes.laziness * 10.0;
 
-        if perception.time_since_last_sense < (genes.laziness * 5.0)
+        if perception.time_since_last_sense < laziness_threshold
             || *behavior_state == BehaviorState::Sleep
         {
             // too lazy or sleeping would not be able to see nearby entities
             // but should know the position of nearby entities so we can avoid them
             skip_sense = true;
+        } else if perception.time_since_last_sense >= laziness_threshold {
+            perception.time_since_last_sense = 0.0;
         }
 
         // we update neighbors always even if they are lazy or sleeping
@@ -89,6 +92,8 @@ pub fn perception_scan_system(
             (pos.y / grid.cell_size).floor() as i32,
         );
         let mut visible_food: Vec<(Entity, f32)> = Vec::new();
+        let mut closest_food_dist: f32 = f32::INFINITY;
+        let mut closest_food_entity: Option<Entity> = None;
         for offset in NEIGHBOR_CELLS {
             if let Some(entities) = grid.buckets.get(&(cell + offset)) {
                 for &other in entities {
@@ -125,6 +130,10 @@ pub fn perception_scan_system(
                             // if other is food
                             if food_query.get(other).is_ok() && dist < genes.vision_range {
                                 visible_food.push((other, dist));
+                                if dist < closest_food_dist {
+                                    closest_food_dist = dist;
+                                    closest_food_entity = Some(other);
+                                }
                             }
                             // if other is predator
                             if predator_query.get(other).is_ok() && dist < genes.vision_range {
@@ -138,8 +147,7 @@ pub fn perception_scan_system(
         if !visible_food.is_empty() {
             if rand::random::<f32>() < 0.5 {
                 // 50% chance to prefer closer target
-                visible_food.sort_by(|a, b| a.1.total_cmp(&b.1));
-                perception.target_food = Some(visible_food[0].0);
+                perception.target_food = closest_food_entity;
             } else {
                 // 50% chance to make a "mistake" and pick a random one
                 let idx = rand::random::<usize>() % visible_food.len();
