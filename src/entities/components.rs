@@ -1,4 +1,4 @@
-use crate::helpers::util::{GRAY, GREEN, YELLOW};
+use crate::helpers::util::{GRAY, GREEN, RED, YELLOW};
 use bevy::math::IVec2;
 use bevy::prelude::*;
 use bevy::utils::HashMap;
@@ -19,9 +19,9 @@ pub struct Genes {
     // personality traits (0.0 - 1.0 range)
     pub sociality: f32, // 0.0 = introvert, 1.0 = extrovert
     pub curiosity: f32, // how often it changes wander target
-    // pub boldness: f32,         // how close it dares approach predators
-    pub greed: f32,    // how far it goes for food or wants to eat
-    pub laziness: f32, // prefers resting vs exploring
+    pub boldness: f32,  // how close it dares approach predators
+    pub greed: f32,     // how far it goes for food or wants to eat
+    pub laziness: f32,  // prefers resting vs exploring
     // pub panic_threshold: f32,  // how easily it flees
     // pub aggression: f32,       // relevant for predator
 
@@ -32,6 +32,7 @@ pub struct Genes {
     pub bite_size: f32,   // how much food it can eat at once
     pub hunger_rate: f32, // how much hunger it gains per second
     pub max_age: f32,     // how long the entity can live
+    pub max_flesh: f32,   // how much flesh the entity has(will be food amount when it dies)
 
     pub gender: bool,             // true = female, false = male
     pub max_offspring_count: u32, // how many offspring the entity can produce
@@ -48,6 +49,7 @@ impl Default for Genes {
             laziness: rng.gen_range(0.0..1.0),
             greed: rng.gen_range(0.0..1.0),
             curiosity: rng.gen_range(0.0..1.0),
+            boldness: rng.gen_range(0.0..1.0),
             wander_radius: rng.gen_range(300.0..600.0),
             bite_size: rng.gen_range(1.0..10.0),
             max_speed: rng.gen_range(5.0..10.0),
@@ -56,6 +58,7 @@ impl Default for Genes {
             gender: gender,
             max_offspring_count: if gender { rng.gen_range(1..10) } else { 0 },
             can_produce_food: if gender { rng.gen_bool(0.5) } else { false },
+            max_flesh: rng.gen_range(10.0..50.0),
             // aggression: 0.0,
             // boldness: 0.0,
             // panic_threshold: 0.0,
@@ -68,6 +71,7 @@ impl Genes {
         let mut new_gene = self.clone();
         new_gene.sociality = rng.gen_range(self.sociality - 0.1..self.sociality + 0.1);
         new_gene.vision_range = rng.gen_range(self.vision_range - 100.0..self.vision_range + 100.0);
+        new_gene.boldness = rng.gen_range(self.boldness - 0.1..self.boldness + 0.1);
         new_gene.wander_radius =
             rng.gen_range(self.wander_radius - 100.0..self.wander_radius + 100.0);
         new_gene.bite_size = self.bite_size;
@@ -77,6 +81,7 @@ impl Genes {
         new_gene.gender = rng.gen_bool(0.5);
         new_gene.max_offspring_count = self.max_offspring_count;
         new_gene.can_produce_food = self.can_produce_food;
+        new_gene.max_flesh = rng.gen_range(self.max_flesh - 10.0..self.max_flesh + 10.0);
         new_gene
     }
     pub fn mutate(&self, father: &Genes) -> Genes {
@@ -84,6 +89,7 @@ impl Genes {
         let mut new_gene = self.clone();
         new_gene.sociality = (self.sociality + father.sociality) / 2.0;
         new_gene.vision_range = (self.vision_range + father.vision_range) / 2.0;
+        new_gene.boldness = (self.boldness + father.boldness) / 2.0;
         new_gene.wander_radius = (self.wander_radius + father.wander_radius) / 2.0;
         new_gene.bite_size = (self.bite_size + father.bite_size) / 2.0;
         new_gene.max_speed = (self.max_speed + father.max_speed) / 2.0;
@@ -92,6 +98,25 @@ impl Genes {
         new_gene.gender = rng.gen_bool(0.5);
         new_gene.max_offspring_count = (self.max_offspring_count + father.max_offspring_count) / 2;
         new_gene.can_produce_food = self.can_produce_food || father.can_produce_food;
+        new_gene.max_flesh = (self.max_flesh + father.max_flesh) / 2.0;
+        new_gene
+    }
+    pub fn new_predator() -> Genes {
+        let mut rng = rand::thread_rng();
+        let mut new_gene = Genes::default();
+        let gender = rng.gen_bool(0.5);
+        new_gene.sociality = rng.gen_range(0.0..1.0);
+        new_gene.vision_range = rng.gen_range(400.0..600.0);
+        new_gene.wander_radius = rng.gen_range(500.0..800.0);
+        new_gene.boldness = rng.gen_range(0.5..1.0);
+        new_gene.bite_size = rng.gen_range(10.0..20.0);
+        new_gene.max_speed = rng.gen_range(7.0..10.0);
+        new_gene.hunger_rate = rng.gen_range(0.7..1.0);
+        new_gene.max_age = rng.gen_range(100.0..300.0);
+        new_gene.gender = gender;
+        new_gene.max_offspring_count = if gender { rng.gen_range(1..10) } else { 0 };
+        new_gene.can_produce_food = if gender { rng.gen_bool(0.5) } else { false };
+        new_gene.max_flesh = rng.gen_range(10.0..50.0);
         new_gene
     }
 }
@@ -144,14 +169,20 @@ pub enum BehaviorState {
 #[derive(Component, Default, Clone)]
 pub struct Perception {
     pub target_food: Option<Entity>,
-    pub visible_predators: Vec<Entity>,
-    // pub nearby_predator: bool,
+    // pub visible_predators: Vec<(Vec2, f32)>, // (position, distance)
+    // // pub nearby_predator: bool,
     pub time_since_last_sense: f32,
-    pub neighbors: Vec<Vec2>,
-    pub target: Option<Vec2>,
     pub time_since_last_target: f32,
-    pub nearby_corpses: Vec<(Vec2, f32)>, // (position, stench_radius)
-    pub nearby_mates: Vec<Entity>,
+    // pub time_since_last_predator: f32,
+    // pub neighbors: Vec<Vec2>,
+    pub target_position: Option<Vec2>,
+    // pub nearby_corpses: Vec<(Vec2, f32)>, // (position, stench_radius)
+    // pub nearby_mates: Vec<Entity>,
+
+    // the new attractions and repulsions are used to calculate the force vector
+    // instead of managing multiple data points for scalability
+    pub attractions: Vec<(Vec2, f32)>, // (position, strength)
+    pub repulsions: Vec<(Vec2, f32)>,  // (position, strength)
 }
 
 // #[derive(Component)]
@@ -163,7 +194,7 @@ pub struct Perception {
 
 #[derive(Component)]
 pub struct Needs {
-    // pub fear: f32,   // high fear = slower movement
+    pub fear: f32,   // high fear = slower movement
     pub sanity: f32, // low sanity = more aggressive
 
     pub hunger: f32, // hunger should influence sanity
@@ -183,7 +214,7 @@ pub struct Needs {
 impl Default for Needs {
     fn default() -> Self {
         Self {
-            // fear: 0.0,
+            fear: 0.0,
             sanity: 1.0,
             hunger: 0.0,
             energy: 1.0,
@@ -246,7 +277,7 @@ pub fn create_food(
 }
 pub fn create_prey(
     pos: Vec2,
-    speciesId: SpeciesId,
+    species_id: SpeciesId,
     gene: Genes,
 ) -> (
     Position,
@@ -261,7 +292,9 @@ pub fn create_prey(
     Age,
     Needs,
     SpeciesId,
+    FoodAmount,
 ) {
+    let mut rng = rand::thread_rng();
     (
         Position(pos),
         Prey,
@@ -282,7 +315,8 @@ pub fn create_prey(
         Perception::default(),
         Age(0.0),
         Needs::default(),
-        speciesId,
+        species_id,
+        FoodAmount(rng.gen_range(gene.max_flesh / 2.0..gene.max_flesh)),
     )
 }
 pub fn create_corpse(
@@ -307,5 +341,50 @@ pub fn create_corpse(
             decay_rate: 1.0,
             decay_timer: 100.0,
         },
+    )
+}
+
+pub fn create_predator(
+    pos: Vec2,
+    species_id: SpeciesId,
+    gene: Genes,
+) -> (
+    Position,
+    Predator,
+    WorldObject,
+    LivingEntity,
+    EntityColor,
+    BehaviorState,
+    Genes,
+    SpriteBundle,
+    Perception,
+    Age,
+    Needs,
+    SpeciesId,
+    FoodAmount,
+) {
+    let mut rng = rand::thread_rng();
+    (
+        Position(pos),
+        Predator,
+        WorldObject,
+        LivingEntity,
+        EntityColor(RED),
+        BehaviorState::Wander,
+        gene,
+        SpriteBundle {
+            sprite: Sprite {
+                color: RED,
+                custom_size: Some(Vec2::new(2.0, 2.0)),
+                ..default()
+            },
+            transform: Transform::from_translation(pos.extend(0.0)),
+            ..default()
+        },
+        Perception::default(),
+        Age(0.0),
+        Needs::default(),
+        species_id,
+        FoodAmount(rng.gen_range(gene.max_flesh / 2.0..gene.max_flesh)),
     )
 }

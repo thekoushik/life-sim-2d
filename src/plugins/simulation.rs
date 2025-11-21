@@ -1,8 +1,8 @@
 use crate::entities::components::{
     BehaviorState, EntityColor, Food, Needs, Position, Prey, SimulationSpeed, SpatialGrid,
 };
-use crate::entities::gameloop::game_loop;
-use crate::entities::perception::perception_scan_system;
+use crate::entities::gameloop::{game_loop_predator, game_loop_prey};
+use crate::entities::perception::{perception_scan_system_predator, perception_scan_system_prey};
 use crate::entities::systems::{handle_input, setup_entities, update_entities, update_grid_system};
 use crate::world::config::save_config;
 use bevy::prelude::*;
@@ -24,8 +24,10 @@ impl Plugin for SimulationPlugin {
                 Update,
                 (
                     update_grid_system,
-                    perception_scan_system,
-                    game_loop,
+                    perception_scan_system_prey,
+                    perception_scan_system_predator,
+                    game_loop_prey,
+                    game_loop_predator,
                     update_entities,
                 )
                     .chain(),

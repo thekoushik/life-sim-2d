@@ -1,11 +1,9 @@
 use super::components::{
-    Age, BehaviorState, Corpse, CorpseState, Genes, Needs, Position, Prey, SimulationSpeed,
-    SpatialGrid, Species, SpeciesId, WorldObject, create_corpse, create_food, create_prey,
+    Age, BehaviorState, Corpse, CorpseState, Genes, LivingEntity, Needs, Position, Prey,
+    SimulationSpeed, SpatialGrid, Species, SpeciesId, WorldObject, create_corpse, create_food,
+    create_predator, create_prey,
 };
-use crate::{
-    entities::components::Perception,
-    helpers::util::{WORLD_HEIGHT, WORLD_WIDTH},
-};
+use crate::helpers::util::{WORLD_HEIGHT, WORLD_WIDTH};
 use bevy::{prelude::*, window::PrimaryWindow};
 use noisy_bevy::simplex_noise_2d;
 use rand::Rng;
@@ -64,6 +62,15 @@ pub fn setup_entities(mut commands: Commands) {
             genetic_max: genetic_min.random_variation(),
         });
     }
+    let predator_species_count = rng.gen_range(3..5);
+    for i in 0..predator_species_count {
+        let genetic_min = Genes::new_predator();
+        vec_species.push(Species {
+            id: SpeciesId(species_count + i as u32),
+            genetic_min: genetic_min.clone(),
+            genetic_max: genetic_min.random_variation(),
+        });
+    }
 
     for _ in 0..2000 {
         let pos = Vec2::new(
@@ -73,8 +80,16 @@ pub fn setup_entities(mut commands: Commands) {
         let species = vec_species[rng.gen_range(0..vec_species.len())];
         commands.spawn(create_prey(pos, species.id, species.random_gene()));
     }
+    for _ in 0..100 {
+        let pos = Vec2::new(
+            rng.gen_range(0.0..WORLD_WIDTH),
+            rng.gen_range(0.0..WORLD_HEIGHT),
+        );
+        let species = vec_species[rng.gen_range(0..vec_species.len())];
+        commands.spawn(create_predator(pos, species.id, species.random_gene()));
+    }
 
-    info!("Spawned foods and prey entities");
+    info!("Spawned foods, prey and predator entities");
 }
 
 pub fn update_grid_system(
@@ -105,7 +120,7 @@ pub fn update_entities(
             &mut Transform,
             &SpeciesId,
         ),
-        With<Prey>,
+        With<LivingEntity>,
     >,
     mut corpse_query: Query<(Entity, &mut CorpseState, &Position), With<Corpse>>,
     // needs_query: Query<&Needs, With<LivingEntity>>,
@@ -141,7 +156,8 @@ pub fn update_entities(
             && needs.hunger < MATE_READY_HUNGER_THRESHOLD
             && needs.energy >= MATE_READY_ENERGY_THRESHOLD
             && !needs.pregnant
-            && needs.pregnancy_timer <= 0.0;
+            && needs.pregnancy_timer <= 0.0
+            && rand::random::<f32>() < genes.sociality;
         // if there is a partner, decrease the partner timer
         if needs.partner.is_some() {
             needs.partner_timer -= delta_time;
